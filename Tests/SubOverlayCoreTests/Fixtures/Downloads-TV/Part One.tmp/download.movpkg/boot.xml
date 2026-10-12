@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<HLSMoviePackage xmlns="http://apple.com/IMG/Schemas/HLSMoviePackage">
+  <Version>1.0</Version>
+  <Streams>
+    <Stream ID="0-VIDEO" NetworkURL="https://example.invalid/hls/stream/playlist.m3u8?g=750&amp;t=TOKEN" Path="0-VIDEO">
+      <Complete>NO</Complete>
+    </Stream>
+    <Stream ID="2-AR" NetworkURL="https://example.invalid/hls/stream/playlist.m3u8?id=ar&amp;t=TOKEN%2B1" Path="2-AR">
+      <Complete>YES</Complete>
+    </Stream>
+    <Stream ID="2-TRF" NetworkURL="https://example.invalid/hls/stream/playlist.m3u8?id=trf&amp;t=TOKEN%2B1" Path="2-TRF">
+      <Complete>YES</Complete>
+    </Stream>
+    <Stream ID="2-FRSDH" NetworkURL="https://example.invalid/hls/stream/playlist.m3u8?id=frsdh&amp;t=TOKEN%2B1" Path="2-FRSDH">
+      <Complete>YES</Complete>
+    </Stream>
+    <Stream ID="2-FR" NetworkURL="https://example.invalid/hls/stream/playlist.m3u8?id=fr&amp;t=TOKEN%2B1" Path="2-FR">
+      <Complete>YES</Complete>
+    </Stream>
+  </Streams>
+</HLSMoviePackage>

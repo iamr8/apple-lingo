@@ -1,0 +1,8 @@
+#EXTM3U
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.title",VALUE="Some Show",LANGUAGE="en-GB"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.episode-title",VALUE="Part One",LANGUAGE="en-GB"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",LANGUAGE="ar",NAME="العربية",AUTOSELECT=YES,FORCED=NO,URI="stream/playlist.m3u8?id=ar&t=TOKEN%2B1"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",LANGUAGE="tr",NAME="Türkçe",FORCED=YES,URI="stream/playlist.m3u8?id=trf&t=TOKEN%2B1"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",LANGUAGE="fr-FR",NAME="Français",CHARACTERISTICS="public.accessibility.transcribes-spoken-dialog,public.accessibility.describes-music-and-sound",FORCED=NO,URI="stream/playlist.m3u8?id=frsdh&t=TOKEN%2B1"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",LANGUAGE="fr-FR",NAME="Français",FORCED=NO,URI="stream/playlist.m3u8?id=fr&t=TOKEN%2B1"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",LANGUAGE="en",NAME="English",URI="stream/playlist.m3u8?g=128&t=TOKEN"
