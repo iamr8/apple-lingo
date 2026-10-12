@@ -25,25 +25,45 @@ public struct NowPlayingMerger: Sendable {
     private var logAlive = false
     /// Epoch microseconds since which the player stands still; nil while it moves.
     private var stalledSince: Double?
-    /// Microseconds of ended stalls since the report's sample time.
+    /// Microseconds of ended stalls since the anchor's sample time.
     private var stalledTotal = 0.0
+    /// The main player's own clock from the log: `time` seconds at `sampled` (epoch
+    /// microseconds), moving at `rate`. The TV app's Now Playing position is rounded down at a
+    /// pause and behind after a seek, so while the log is alive this is the position's anchor.
+    private var clock: Clock?
 
     private struct Report: Equatable {
         var elapsed: Double, sampled: Double?, playing: Bool, rate: Double
+    }
+
+    private struct Clock: Equatable {
+        var time: Double, sampled: Double, rate: Double
     }
 
     public init() {}
 
     public mutating func apply(line: String) throws {
         let message = try JSONDecoder().decode(Message.self, from: Data(line.utf8))
+        let item = payload["contentItemIdentifier"]
         if message.diff != true { payload = [:] }
         for (key, value) in message.payload {
             if value == .null { payload[key] = nil } else { payload[key] = value }
         }
+        // Another title: its clock, holds and seeks are not this one's.
+        if item != nil, payload["contentItemIdentifier"] != item { resetClock() }
         // On play or pause the TV app first sends "playing" alone; only a line with a position or
         // sample time is a new report.
         if message.diff != true || message.payload["elapsedTimeMicros"] != nil
             || message.payload["timestampEpochMicros"] != nil { noteReport() }
+    }
+
+    private mutating func resetClock() {
+        report = nil
+        clock = nil
+        settleUntil = 0
+        pausedSeek = false
+        stalledSince = nil
+        stalledTotal = 0
     }
 
     /// A new report that jumps more than 1 s from where the last one predicted is a seek; a seek
@@ -55,6 +75,17 @@ public struct NowPlayingMerger: Sendable {
         let new = Report(elapsed: elapsed / 1e6, sampled: payload["timestampEpochMicros"]?.number,
                          playing: payload["playing"]?.bool ?? false, rate: payload["playbackRate"]?.number ?? 1)
         guard new != report else { return }
+        if let clock, logAlive {
+            // The log's clock owns the position. A report that jumps from it while nothing holds
+            // the player is a seek the log did not show; any other report only updates the rest.
+            let at = new.sampled ?? clock.sampled
+            let predicted = clock.time + playedMicros(from: clock.sampled, to: at) / 1e6 * clockRate
+            if stalledSince != nil || abs(new.elapsed - predicted) <= 1 {
+                report = new
+                return
+            }
+            self.clock = nil
+        }
         if let old = report, let oldSampled = old.sampled, let sampled = new.sampled {
             let predicted = old.elapsed + (old.playing ? playedMicros(from: oldSampled, to: sampled) / 1e6 * old.rate : 0)
             let jumped = abs(new.elapsed - predicted) > 1
@@ -75,27 +106,39 @@ public struct NowPlayingMerger: Sendable {
     }
 
     /// A player state change from the log. From the first one on, the log decides the waits;
-    /// only its lines start a stall and only its lines end one.
+    /// only its lines start a stall and only its lines end one. Its clock lines anchor the
+    /// position; stalls count from the newest one.
     public mutating func apply(event: PlayerEvent) {
-        logAlive = true
         switch event.kind {
         case .stopped:
-            if stalledSince == nil { stalledSince = max(event.epochMicros, report?.sampled ?? 0) }
+            logAlive = true
+            if stalledSince == nil { stalledSince = max(event.epochMicros, clock?.sampled ?? report?.sampled ?? 0) }
             // The wait is known now; the fallback's guess for it is not needed.
             settleUntil = 0
         case .playing:
+            logAlive = true
             if let since = stalledSince {
                 stalledTotal += max(0, event.epochMicros - since)
                 stalledSince = nil
             }
-        case .timebase, .logRestarted:
-            break
+        case .timebase(let rate, let time):
+            logAlive = true
+            clock = Clock(time: time, sampled: event.epochMicros, rate: rate)
+            settleUntil = 0
+            stalledTotal = 0
+            // At rate 0 the player stands (pause, seek, stall) until a line says it moves; at
+            // any other rate it moves from here.
+            stalledSince = rate == 0 ? max(stalledSince ?? 0, event.epochMicros) : nil
+        case .logRestarted:
+            // Lines were lost: the clock and any hold may be stale.
+            logEnded()
         }
     }
 
     /// The log ended: the fallback decides the waits until the log speaks again.
     public mutating func logEnded() {
         logAlive = false
+        clock = nil
         stalledSince = nil
         stalledTotal = 0
     }
@@ -111,6 +154,9 @@ public struct NowPlayingMerger: Sendable {
         return max(0, t - max(sampled, settleUntil) - stalled)
     }
 
+    /// The TV app's rate as it reports it; 1 when it says nothing (it reports 1 while paused).
+    private var clockRate: Double { payload["playbackRate"]?.number ?? 1 }
+
     /// The TV app's playback, or nil when TV is not the now-playing app.
     public func state(receivedAt anchor: ContinuousClock.Instant, epochMicrosNow: Int64) -> PlaybackState? {
         guard payload["bundleIdentifier"]?.string == Self.tvBundleID,
@@ -118,16 +164,20 @@ public struct NowPlayingMerger: Sendable {
               payload["elapsedTimeMicros"]?.number != nil, let report
         else { return nil }
         let playing = payload["playing"]?.bool ?? false
-        var rate = payload["playbackRate"]?.number ?? 1
+        var rate = clockRate
         var elapsed = report.elapsed
         var start = anchor
-        if playing, report.playing, let sampled = report.sampled {
+        if playing {
             let now = Double(epochMicrosNow)
-            let holdUntil = max(sampled, settleUntil)
-            if now < holdUntil {
-                start = anchor.advanced(by: .seconds((holdUntil - now) / 1e6))
-            } else {
-                elapsed += playedMicros(from: sampled, to: now) / 1e6 * rate
+            if let clock, logAlive {
+                elapsed = clock.time + playedMicros(from: clock.sampled, to: now) / 1e6 * rate
+            } else if report.playing, let sampled = report.sampled {
+                let holdUntil = max(sampled, settleUntil)
+                if now < holdUntil {
+                    start = anchor.advanced(by: .seconds((holdUntil - now) / 1e6))
+                } else {
+                    elapsed += playedMicros(from: sampled, to: now) / 1e6 * rate
+                }
             }
             // Standing still, with the overlay kept on screen.
             if logAlive, stalledSince != nil { rate = 0 }

@@ -260,6 +260,150 @@ struct NowPlayingMergerTests {
         #expect(abs(s.position(at: anchor + .seconds(1)) - 501.1) < 1e-6)
     }
 
+    func clock(_ rate: Double, _ time: Double, _ micros: Int64) -> PlayerEvent {
+        PlayerEvent(kind: .timebase(rate: rate, time: time), epochMicros: Double(micros))
+    }
+
+    func sample(_ elapsedMicros: Int64, _ sampled: Int64) -> String {
+        line(true, #"{"timestampEpochMicros":\#(sampled),"elapsedTimeMicros":\#(elapsedMicros)}"#)
+    }
+
+    // Breaks if the Now Playing write after a resume (23 ms after the clock line, with the
+    // position the TV app rounded down at the pause) replaces the clock line as the anchor.
+    // Real trace: clock 1994.529 at 28.669, Playing 28.672, Now Playing 1994.125 at 28.692.
+    @Test func clockLineAnchorsTheResume() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","playing":false,"playbackRate":1,"elapsedTimeMicros":1994000155,"timestampEpochMicros":\#(epochNow - 5_000_000)}"#))
+        m.apply(event: event(.stopped, epochNow - 5_000_000))
+        m.apply(event: clock(1, 1994.52893, epochNow))
+        m.apply(event: event(.playing, epochNow + 3_000))
+        try m.apply(line: line(true, #"{"playing":true}"#))
+        try m.apply(line: sample(1994125223, epochNow + 23_000))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(1), epochMicrosNow: epochNow + 1_000_000))
+        #expect(abs(s.position(at: anchor + .seconds(1)) - 1995.52893) < 1e-6)
+    }
+
+    // Breaks if the clock does not hold from the seek's first clock line (0.25 s before any
+    // status line), if the Now Playing write during the wait replaces the landing, or if the
+    // player does not move from the rate-1 line's time. Real trace of a seek to 1700.
+    @Test func clockLinesAnchorTheSeekLanding() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 2000, epochNow - 10_000_000))
+        m.apply(event: clock(0, 2004.335545, epochNow))
+        let held = try #require(m.state(receivedAt: anchor + .seconds(0.1), epochMicrosNow: epochNow + 100_000))
+        #expect(held.position(at: anchor + .seconds(1)) == 2004.335545)
+        m.apply(event: event(.stopped, epochNow + 247_000))
+        m.apply(event: clock(0, 1700.613272, epochNow + 252_000))
+        try m.apply(line: sample(1700000000, epochNow + 263_000))
+        let landed = try #require(m.state(receivedAt: anchor + .seconds(0.3), epochMicrosNow: epochNow + 300_000))
+        #expect(landed.position(at: anchor + .seconds(1)) == 1700.613272)
+        m.apply(event: event(.playing, epochNow + 514_000))
+        m.apply(event: clock(1, 1700.516447, epochNow + 519_000))
+        try m.apply(line: sample(1700270200, epochNow + 533_000))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(1.519), epochMicrosNow: epochNow + 1_519_000))
+        #expect(abs(s.position(at: anchor + .seconds(1.519)) - 1701.516447) < 1e-6)
+    }
+
+    // Breaks if the seek's Now Playing write, landing before the log's lines (the log can be
+    // slower), is not taken as the seek, or if the clock lines that follow do not win again.
+    @Test func seekReportBeforeItsClockLinesIsAccepted() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 2000, epochNow - 10_000_000))
+        m.apply(event: clock(1, 2000, epochNow - 10_000_000))
+        try m.apply(line: report(true, 1700, epochNow))
+        let jumped = try #require(m.state(receivedAt: anchor, epochMicrosNow: epochNow))
+        #expect(abs(jumped.position(at: anchor + .seconds(1)) - 1701) < 1e-6)
+        m.apply(event: event(.stopped, epochNow + 10_000))
+        m.apply(event: clock(0, 1700.613272, epochNow + 15_000))
+        let held = try #require(m.state(receivedAt: anchor + .seconds(0.1), epochMicrosNow: epochNow + 100_000))
+        #expect(held.position(at: anchor + .seconds(1)) == 1700.613272)
+        m.apply(event: event(.playing, epochNow + 280_000))
+        m.apply(event: clock(1, 1700.516447, epochNow + 285_000))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(1.285), epochMicrosNow: epochNow + 1_285_000))
+        #expect(abs(s.position(at: anchor + .seconds(1.285)) - 1701.516447) < 1e-6)
+    }
+
+    // Breaks if a seek the log never showed (a jump in Now Playing with no clock line and no
+    // hold) is ignored while a clock line is the anchor.
+    @Test func reportJumpWithoutLinesReplacesTheAnchor() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 100, epochNow - 10_000_000))
+        m.apply(event: clock(1, 100, epochNow - 10_000_000))
+        try m.apply(line: report(true, 1800, epochNow))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(1), epochMicrosNow: epochNow + 1_000_000))
+        #expect(abs(s.position(at: anchor + .seconds(2)) - 1802) < 1e-6)
+    }
+
+    // Breaks if a stall counted from the status line is counted again from the clock line
+    // that lands 0.5 s later, or if the clock line is not the new anchor.
+    @Test func stallClockLineCountsTheStallOnce() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 500, epochNow - 10_000_000))
+        m.apply(event: clock(1, 500, epochNow - 10_000_000))
+        m.apply(event: event(.stopped, epochNow))
+        m.apply(event: clock(0, 510, epochNow + 500_000))
+        m.apply(event: event(.playing, epochNow + 3_000_000))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(5), epochMicrosNow: epochNow + 5_000_000))
+        #expect(abs(s.position(at: anchor + .seconds(6)) - 513) < 1e-6)
+    }
+
+    // Breaks if a stall with status lines only (no clock line) stops freezing an anchored clock.
+    @Test func stallWithoutClockLineStillFreezes() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 500, epochNow - 10_000_000))
+        m.apply(event: clock(1, 500, epochNow - 10_000_000))
+        m.apply(event: event(.stopped, epochNow))
+        let stalled = try #require(m.state(receivedAt: anchor + .seconds(1), epochMicrosNow: epochNow + 1_000_000))
+        #expect(stalled.effectiveRate == 0)
+        #expect(stalled.position(at: anchor + .seconds(2)) == 510)
+        m.apply(event: event(.playing, epochNow + 3_000_000))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(3), epochMicrosNow: epochNow + 3_000_000))
+        #expect(abs(s.position(at: anchor + .seconds(4)) - 511) < 1e-6)
+    }
+
+    // Breaks if Now Playing's clock, running 30 s ahead through Apple's bumper, is taken as a
+    // seek while the main player holds, or if the clock line at the bumper's end does not
+    // re-anchor. Trace: held at 71.517 for 60 s, then 71.296563 at rate 1.
+    @Test func bumperHoldsTheClock() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 71, epochNow - 1_000_000))
+        m.apply(event: clock(0, 71.517, epochNow))
+        m.apply(event: event(.stopped, epochNow + 10_000))
+        try m.apply(line: sample(101000000, epochNow + 30_000_000))
+        let held = try #require(m.state(receivedAt: anchor + .seconds(30), epochMicrosNow: epochNow + 30_000_000))
+        #expect(held.effectiveRate == 0)
+        #expect(held.position(at: anchor + .seconds(31)) == 71.517)
+        m.apply(event: clock(1, 71.296563, epochNow + 60_000_000))
+        m.apply(event: event(.playing, epochNow + 60_100_000))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(61), epochMicrosNow: epochNow + 61_000_000))
+        #expect(abs(s.position(at: anchor + .seconds(61)) - 72.296563) < 1e-6)
+    }
+
+    // Breaks if a clock anchor or an open hold outlives a restart of the log process: lines
+    // were lost, so Now Playing decides until the next clock line.
+    @Test func logRestartDropsAnchorAndHold() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 500, epochNow - 10_000_000))
+        m.apply(event: clock(1, 500.9, epochNow - 10_000_000))
+        m.apply(event: event(.stopped, epochNow))
+        m.apply(event: event(.logRestarted, epochNow + 1_000_000))
+        let s = try #require(m.state(receivedAt: anchor + .seconds(2), epochMicrosNow: epochNow + 2_000_000))
+        #expect(s.effectiveRate == 1)
+        #expect(abs(s.position(at: anchor + .seconds(2)) - 512) < 1e-6)
+    }
+
+    // Breaks if a new title keeps the old title's clock anchor or hold.
+    @Test func newTitleDropsOldClockState() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"A","contentItemIdentifier":"A1","playing":true,"playbackRate":1,"elapsedTimeMicros":500000000,"timestampEpochMicros":\#(epochNow - 10_000_000)}"#))
+        m.apply(event: clock(1, 500, epochNow - 10_000_000))
+        m.apply(event: event(.stopped, epochNow - 1_000_000))
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"B","contentItemIdentifier":"B1","playing":true,"playbackRate":1,"elapsedTimeMicros":20000000,"timestampEpochMicros":\#(epochNow)}"#))
+        let s = try #require(m.state(receivedAt: anchor, epochMicrosNow: epochNow))
+        #expect(s.effectiveRate == 1)
+        #expect(abs(s.position(at: anchor + .seconds(1)) - 21) < 1e-6)
+    }
+
     // Breaks if another app's playback drives the overlay.
     @Test func otherAppGivesNoState() throws {
         var m = NowPlayingMerger()
