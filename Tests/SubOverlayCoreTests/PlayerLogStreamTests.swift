@@ -54,6 +54,20 @@ struct PlayerLogStreamTests {
         #expect(PlayerLogStream.parse(line: Self.line(Self.interstitial)) == PlayerEvent(kind: .stopped, epochMicros: 1_791_740_571_549_335))
     }
 
+    // Breaks if a restart of `log stream` does not reach the merger as an event between the
+    // lines before and after it.
+    @Test func restartBecomesAnEvent() async {
+        let outputs = AsyncStream<LineProcess.Output> { c in
+            c.yield(.line(Self.timebase("1.000000", "5.000000")))
+            c.yield(.restarted)
+            c.yield(.line(Self.line(Self.playing)))
+            c.finish()
+        }
+        var kinds: [PlayerEvent.Kind] = []
+        for await event in PlayerLogStream.events(from: outputs) { kinds.append(event.kind) }
+        #expect(kinds == [.timebase(rate: 1, time: 5), .logRestarted, .playing])
+    }
+
     // Breaks if the stream header, the interstitial player's changes, or a broken line become events.
     @Test func ignoresOtherLines() {
         #expect(PlayerLogStream.parse(line: #"Filtering the log data using "process == "TV" AND eventMessage CONTAINS "main player timeControlStatus did change""#) == nil)

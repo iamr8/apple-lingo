@@ -11,17 +11,38 @@ struct LineProcess: Sendable {
     /// Names the program in the log when it exits.
     let name: String
 
+    enum Output: Sendable, Equatable {
+        case line(String)
+        /// The program exited and starts again; output in between was lost.
+        case restarted
+    }
+
     /// Output lines. Restarts the program after an exit, at most 3 times. Cancelling the
     /// consumer terminates the process.
     func lines() -> AsyncStream<String> {
+        let outputs = outputs()
+        return AsyncStream { continuation in
+            let task = Task {
+                for await output in outputs {
+                    if case .line(let line) = output { continuation.yield(line) }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Output lines, with a mark at each restart.
+    func outputs() -> AsyncStream<Output> {
         AsyncStream { continuation in
             let task = Task {
                 var restarts = 0
                 while !Task.isCancelled {
-                    let status = await run { continuation.yield($0) }
+                    let status = await run { continuation.yield(.line($0)) }
                     if Task.isCancelled || restarts == Self.maxRestarts { break }
                     restarts += 1
                     Log.adapter.error("\(name, privacy: .public) exited with \(status), restart \(restarts)")
+                    continuation.yield(.restarted)
                     try? await Task.sleep(for: .seconds(1 << (restarts - 1)))
                 }
                 continuation.finish()

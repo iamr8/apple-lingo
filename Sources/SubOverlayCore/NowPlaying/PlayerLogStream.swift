@@ -42,15 +42,23 @@ public struct PlayerLogStream: Sendable {
     /// Events as the TV app logs them. Restarts `log` after an exit, at most 3 times.
     /// Cancelling the consumer terminates the process.
     public func events() -> AsyncStream<PlayerEvent> {
-        let lines = LineProcess(
+        Self.events(from: LineProcess(
             executable: Self.log,
             arguments: ["stream", "--style", "ndjson", "--process", "TV", "--predicate", Self.predicate],
             maxLineLength: Self.maxLineLength, name: "log stream"
-        ).lines()
-        return AsyncStream { continuation in
+        ).outputs())
+    }
+
+    static func events(from outputs: AsyncStream<LineProcess.Output>) -> AsyncStream<PlayerEvent> {
+        AsyncStream { continuation in
             let task = Task {
-                for await line in lines {
-                    if let event = Self.parse(line: line) { continuation.yield(event) }
+                for await output in outputs {
+                    switch output {
+                    case .line(let line):
+                        if let event = Self.parse(line: line) { continuation.yield(event) }
+                    case .restarted:
+                        continuation.yield(PlayerEvent(kind: .logRestarted, epochMicros: Date().timeIntervalSince1970 * 1e6))
+                    }
                 }
                 continuation.finish()
             }
