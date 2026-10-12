@@ -5,7 +5,7 @@ let package = Package(
     name: "SubOverlay",
     platforms: [.macOS(.v15)],
     dependencies: [
-        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "1.10.0"),
+        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "3.1.0"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.6"),
         .package(url: "https://github.com/huggingface/AnyLanguageModel", exact: "0.16.0"),
     ],
