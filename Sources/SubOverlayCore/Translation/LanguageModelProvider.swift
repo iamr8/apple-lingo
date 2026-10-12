@@ -70,7 +70,7 @@ public struct LanguageModelProvider: TranslationProvider {
         guard model.wholeMatch(of: /[A-Za-z0-9][A-Za-z0-9._:\-]{0,99}/) != nil else { throw ProviderError.badModelID }
         self.service = service
         switch service {
-        case .gemini: self.model = GeminiLanguageModel(apiKey: apiKey, model: model, session: session)
+        case .gemini: self.model = GeminiLanguageModel(apiKey: apiKey, model: model, session: GeminiInstructionsProtocol.session(over: session))
         case .openAI: self.model = OpenAILanguageModel(apiKey: apiKey, model: model, session: session)
         }
     }

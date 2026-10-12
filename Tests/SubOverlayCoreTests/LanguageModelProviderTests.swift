@@ -45,12 +45,37 @@ struct LanguageModelProviderTests {
         #expect(req.value(forHTTPHeaderField: "x-goog-api-key") == "SECRET")
         #expect(req.url?.query == nil)
         let body = try Self.body(req)
-        // The library sends instructions as the first user turn, not as systemInstruction.
-        #expect(String(describing: body["contents"]).contains("sys prompt"))
+        // The library sends instructions as the first user turn; the provider moves them into
+        // systemInstruction, where Gemini's prohibited-content filter lets a subtitle chunk pass.
+        guard case .object(let instruction)? = body["systemInstruction"], case .array(let parts)? = instruction["parts"],
+              case .object(let part)? = parts.first
+        else { Issue.record("no systemInstruction"); return }
+        #expect(part["text"] == .string("sys prompt"))
+        guard case .array(let contents)? = body["contents"] else { Issue.record("no contents"); return }
+        #expect(contents.count == 1)
+        #expect(String(describing: contents).contains("usr") && !String(describing: contents).contains("sys prompt"))
         guard case .object(let config)? = body["generationConfig"] else { Issue.record("no config"); return }
         #expect(config["responseMimeType"] == .string("application/json"))
         #expect(config["responseSchema"] != nil)
         #expect(!String(describing: body["contents"]).contains("tone"), "schema must not be pasted into the prompt")
+    }
+
+    // Breaks if the first user turn is not moved into systemInstruction, or a body with one turn,
+    // with an instruction already, or without JSON is changed.
+    @Test func rewriteMovesFirstUserTurn() throws {
+        func json(_ s: String) -> Data { Data(s.utf8) }
+        let two = json(#"{"contents":[{"role":"user","parts":[{"text":"sys"}]},{"role":"user","parts":[{"text":"usr"}]}],"generationConfig":{"temperature":0.2}}"#)
+        let out = try JSONDecoder().decode(JSONValue.self, from: GeminiInstructionsProtocol.rewritten(two))
+        #expect(out == .object([
+            "systemInstruction": .object(["parts": .array([.object(["text": .string("sys")])])]),
+            "contents": .array([.object(["role": .string("user"), "parts": .array([.object(["text": .string("usr")])])])]),
+            "generationConfig": .object(["temperature": .number(0.2)]),
+        ]))
+        let one = json(#"{"contents":[{"role":"user","parts":[{"text":"usr"}]}]}"#)
+        #expect(GeminiInstructionsProtocol.rewritten(one) == one)
+        let set = json(#"{"systemInstruction":{"parts":[]},"contents":[{"role":"user","parts":[]},{"role":"user","parts":[]}]}"#)
+        #expect(GeminiInstructionsProtocol.rewritten(set) == set)
+        #expect(GeminiInstructionsProtocol.rewritten(json("nope")) == json("nope"))
     }
 
     // Breaks if OpenAI is not asked for a strict JSON schema, or the key is not a bearer header.
