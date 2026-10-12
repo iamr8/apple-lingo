@@ -208,14 +208,16 @@ public actor TranslationPipeline {
     }
 
     /// Translates the cues at `indices` of the base track. Valid cues of a reply are kept; cues the
-    /// model left out (often merged into a neighbour) or broke are asked for again on their own.
+    /// model left out (often merged into a neighbour) or broke are asked for again one at a time,
+    /// where a reply cannot drift, so a wrong copied word the model repeats cannot fail the title.
     private func translateChunk(_ indices: [Int], job: TranslationJob, styleSheet: JSONValue, system: String) async throws -> [Item] {
         var done: [Item] = []
         var remaining = indices
         var attempt = 0
+        var alone = false
         while true {
             try Task.checkCancellation()
-            let input = chunkInput(remaining, job: job, styleSheet: styleSheet)
+            let input = chunkInput(alone ? [remaining[0]] : remaining, job: job, styleSheet: styleSheet)
             let ids = input.translate.map(\.id)
             do {
                 let user = String(decoding: try JSONEncoder().encode(input), as: UTF8.self)
@@ -251,6 +253,11 @@ public actor TranslationPipeline {
                 done += good
                 remaining = remaining.filter { !seen.contains(job.timing[$0].id) }
                 if remaining.isEmpty { return done }
+                // Progress: the leftovers follow one by one, with no retry wait.
+                if !good.isEmpty {
+                    alone = true
+                    continue
+                }
                 let missing = job.timing[remaining[0]].id
                 let why = reply.first { $0.id == missing }.flatMap(problem) ?? "missing cue \(missing)"
                 throw PipelineError.badReply(remaining.count > 1 ? "\(remaining.count) of \(indices.count) cues rejected; \(why)" : why)

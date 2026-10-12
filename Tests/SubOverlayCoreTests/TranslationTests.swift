@@ -343,27 +343,50 @@ struct TranslationPipelineTests {
         #expect(out.map(\.text) == ["T", "T", "T"])
     }
 
-    // Breaks if a reply that merged a cue away fails the chunk, or the retry asks for the whole chunk again.
-    @Test func missingCuesAreAskedAgainAlone() async throws {
-        let provider = EchoProvider()
-        let merging = EditingProvider { items in items.count > 1 ? items.filter { $0 != items[1] } : items }
-        struct Both: TranslationProvider {
-            let record: EchoProvider
-            let inner: EditingProvider
-            func complete(system: String, user: String, schema: GenerationSchema) async throws -> Data {
-                _ = try await record.complete(system: system, user: user, schema: schema)
-                return try await inner.complete(system: system, user: user, schema: schema)
-            }
+    /// Records each request with `record`, answers with `inner`.
+    struct Both: TranslationProvider {
+        let record: EchoProvider
+        let inner: EditingProvider
+        func complete(system: String, user: String, schema: GenerationSchema) async throws -> Data {
+            _ = try await record.complete(system: system, user: user, schema: schema)
+            return try await inner.complete(system: system, user: user, schema: schema)
         }
-        let out = try await TranslationPipeline(provider: Both(record: provider, inner: merging), retryDelay: .zero)
-            .translate(job(cues(4))) { _ in }
-        #expect(out.map(\.text) == ["T", "T", "T", "T"])
-        let asked = provider.calls.withLock { $0 }.compactMap { user -> [Int]? in
+    }
+
+    /// The cue ids each recorded request asked for.
+    func asked(_ provider: EchoProvider) -> [[Int]] {
+        provider.calls.withLock { $0 }.compactMap { user -> [Int]? in
             guard case .object(let o) = try? JSONDecoder().decode(JSONValue.self, from: Data(user.utf8)),
                   case .array(let items)? = o["translate"] else { return nil }
             return items.compactMap { if case .object(let c) = $0 { c["id"]?.number.map(Int.init) } else { nil } }
         }
-        #expect(asked == [[1, 2, 3, 4], [2]])
+    }
+
+    // Breaks if a reply that merged a cue away fails the chunk, or the retry asks for the whole chunk again.
+    @Test func missingCuesAreAskedAgainAlone() async throws {
+        let provider = EchoProvider()
+        let merging = EditingProvider { items in items.count > 1 ? items.filter { $0 != items[1] } : items }
+        let out = try await TranslationPipeline(provider: Both(record: provider, inner: merging), retryDelay: .zero)
+            .translate(job(cues(4))) { _ in }
+        #expect(out.map(\.text) == ["T", "T", "T", "T"])
+        #expect(asked(provider) == [[1, 2, 3, 4], [2]])
+    }
+
+    // Breaks if two cues whose copied word is wrong in every group reply (a model habit for a
+    // cue) are re-asked together, where the drift check rejects them again until the title fails.
+    @Test func stubbornCopiesAreAskedOneByOne() async throws {
+        let provider = EchoProvider()
+        let stubborn = EditingProvider { items in
+            items.count == 1 ? items : items.map { item in
+                guard case .object(var c) = item, let id = c["cue"]?.number, id >= 2 else { return item }
+                c["source_word"] = .string("other")
+                return .object(c)
+            }
+        }
+        let out = try await TranslationPipeline(provider: Both(record: provider, inner: stubborn), retryDelay: .zero)
+            .translate(job(cues(3))) { _ in }
+        #expect(out.map(\.text) == ["T", "T", "T"])
+        #expect(asked(provider) == [[1, 2, 3], [2], [3]])
     }
 
     // Breaks if a reply whose items drifted is accepted: each id carries the next line's
