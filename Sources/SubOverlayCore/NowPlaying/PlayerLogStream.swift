@@ -7,6 +7,10 @@ public struct PlayerEvent: Sendable, Equatable {
         case playing
         /// The player is paused or waits for data.
         case stopped
+        /// The main player's own clock: at `time` seconds, moving at `rate`, when the line was written.
+        case timebase(rate: Double, time: Double)
+        /// The log process restarted: lines in between were lost.
+        case logRestarted
     }
 
     public var kind: Kind
@@ -19,15 +23,19 @@ public struct PlayerEvent: Sendable, Equatable {
     }
 }
 
-/// Reads the TV app's player state changes from the unified log with `/usr/bin/log stream`.
-/// The TV app writes Now Playing when a wait for data starts and never when it ends; these
-/// lines say when the player really moves.
+/// Reads the TV app's player state changes and its clock from the unified log with
+/// `/usr/bin/log stream`. The TV app's Now Playing position is stale by up to half a second
+/// (rounded down at a pause, behind after a seek) and is written when a wait starts, never when
+/// it ends; these lines say when the player really moves and where its clock stands.
 public struct PlayerLogStream: Sendable {
     static let log = URL(filePath: "/usr/bin/log")
     static let maxLineLength = 16 * 1024
-    /// The main player only: the interstitial player logs the same lines for Apple's intros.
-    static let predicate = #"process == "TV" AND subsystem == "com.apple.AppleTV.playback" AND category == "TVPPlayer" AND eventMessage CONTAINS "main player timeControlStatus did change""#
+    /// The main player's state only (the interstitial player logs the same lines for Apple's
+    /// bumpers), and the interstitial coordinator's clock line, which carries the main player's
+    /// timebase at every rate change: pause, resume, seek, stall.
+    static let predicate = #"process == "TV" AND ((subsystem == "com.apple.AppleTV.playback" AND category == "TVPPlayer" AND eventMessage CONTAINS "main player timeControlStatus did change") OR (subsystem == "com.apple.coremedia" AND eventMessage CONTAINS "FigPlayerInterstitial" AND eventMessage CONTAINS "State logging - timebaseRate"))"#
     static let marker = "main player timeControlStatus did change to AVPlayerTimeControlStatus"
+    static let clockMarker = "State logging - timebaseRate"
 
     public init() {}
 
@@ -58,16 +66,24 @@ public struct PlayerLogStream: Sendable {
     /// One ndjson line of `log stream` as an event, or nil for any other line.
     public static func parse(line: String) -> PlayerEvent? {
         guard let decoded = try? JSONDecoder().decode(Line.self, from: Data(line.utf8)),
-              let range = decoded.eventMessage.range(of: Self.marker),
               let micros = epochMicros(decoded.timestamp)
         else { return nil }
-        let rest = decoded.eventMessage[range.upperBound...]
-        switch rest.prefix(while: \.isLetter) {
+        let message = decoded.eventMessage
+        if message.contains(Self.clockMarker) {
+            // `<<<< FigPlayerInterstitial >>>> fpic_checkScheduledTransition_block_invoke: 0x... State
+            // logging - timebaseRate 1.000000, timebaseTime 1994.528930, ...`: the main player's clock,
+            // also while a bumper plays in the other player.
+            guard message.contains("FigPlayerInterstitial"),
+                  let match = message.firstMatch(of: /timebaseRate (\d+\.\d+), timebaseTime (\d+\.\d+)/),
+                  let rate = Double(match.1), let time = Double(match.2)
+            else { return nil }
+            return PlayerEvent(kind: .timebase(rate: rate, time: time), epochMicros: micros)
+        }
+        guard let range = message.range(of: Self.marker) else { return nil }
+        switch message[range.upperBound...].prefix(while: \.isLetter) {
         case "Playing": return PlayerEvent(kind: .playing, epochMicros: micros)
-        case "Paused": return PlayerEvent(kind: .stopped, epochMicros: micros)
-        case "WaitingToPlayAtSpecifiedRate":
-            // Apple's intro or recap plays in another player; Now Playing counts that time.
-            return PlayerEvent(kind: rest.contains("DuringInterstitialEvent") ? .playing : .stopped, epochMicros: micros)
+        // A wait for Apple's bumper holds the main player's clock like any other wait.
+        case "Paused", "WaitingToPlayAtSpecifiedRate": return PlayerEvent(kind: .stopped, epochMicros: micros)
         default: return nil
         }
     }

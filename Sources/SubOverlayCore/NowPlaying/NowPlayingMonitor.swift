@@ -88,6 +88,8 @@ public struct NowPlayingMerger: Sendable {
                 stalledTotal += max(0, event.epochMicros - since)
                 stalledSince = nil
             }
+        case .timebase, .logRestarted:
+            break
         }
     }
 
