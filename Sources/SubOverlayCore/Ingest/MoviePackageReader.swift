@@ -7,6 +7,8 @@ public struct PackageManifest: Sendable, Equatable {
         /// Package-relative folder, one path component.
         public var path: String
         public var complete: Bool
+        /// The track's media playlist on Apple's servers, for a track the download did not finish.
+        public var url: URL? = nil
     }
 
     public var title: String
@@ -66,7 +68,7 @@ public enum MoviePackageReader {
         var chosen: [String: (track: PackageManifest.Track, sdh: Bool)] = [:]
         for stream in delegate.streams.prefix(maxStreams) {
             guard let info = master.subtitles[stream.url], !info.forced, isSafeComponent(stream.path) else { continue }
-            let track = PackageManifest.Track(language: info.language, path: stream.path, complete: stream.complete)
+            let track = PackageManifest.Track(language: info.language, path: stream.path, complete: stream.complete, url: URL(string: stream.url))
             if let current = chosen[info.language] {
                 if current.sdh && !info.sdh { chosen[info.language] = (track, false) }
             } else {
@@ -105,17 +107,31 @@ public enum MoviePackageReader {
             .sorted { $0.start < $1.start }
         guard fragments.count <= maxFragments else { throw ReadError.tooManyFragments }
         var total = 0
-        var seen = Set<String>()
-        var cues: [Cue] = []
+        var parts: [(base: Double, text: String)] = []
         for fragment in fragments {
             let data = try readFile(dir.appending(path: fragment.name), cap: maxFragmentBytes)
             total += data.count
             guard total <= maxTrackBytes else { throw ReadError.tooLarge(track.path) }
-            let base = periods.last { $0 <= fragment.start + 0.01 } ?? 0
-            for var cue in WebVTT.parse(String(decoding: data, as: UTF8.self))
-            where seen.insert("\(base)|\(cue.start)|\(cue.end)|\(cue.text)").inserted {
-                cue.start += base
-                cue.end += base
+            parts.append((periodStart(periods, at: fragment.start), String(decoding: data, as: UTF8.self)))
+        }
+        return merge(parts)
+    }
+
+    /// Start of the discontinuity period a fragment starting at `start` belongs to.
+    static func periodStart(_ periods: [Double], at start: Double) -> Double {
+        periods.last { $0 <= start + 0.01 } ?? 0
+    }
+
+    /// Cues of fragments, each moved later by its period's start, deduped across fragment
+    /// overlaps, in time order, numbered from 1.
+    static func merge(_ fragments: [(base: Double, text: String)]) -> [Cue] {
+        var seen = Set<String>()
+        var cues: [Cue] = []
+        for fragment in fragments {
+            for var cue in WebVTT.parse(fragment.text)
+            where seen.insert("\(fragment.base)|\(cue.start)|\(cue.end)|\(cue.text)").inserted {
+                cue.start += fragment.base
+                cue.end += fragment.base
                 cues.append(cue)
             }
         }

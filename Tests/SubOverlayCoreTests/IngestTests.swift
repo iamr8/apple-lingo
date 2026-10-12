@@ -98,6 +98,7 @@ struct MoviePackageReaderTests {
         #expect(m.tracks.map(\.language) == ["ar", "fr-FR"])
         #expect(m.tracks.map(\.path) == ["2-AR", "2-FR"])
         #expect(m.allComplete)
+        #expect(m.tracks[0].url == URL(string: "https://example.invalid/hls/stream/playlist.m3u8?id=ar&t=TOKEN%2B1"))
     }
 
     // Breaks if the show and episode names are not read from the master playlist.
@@ -445,7 +446,7 @@ struct DownloadWatcherTests {
         let fifo = dir.appending(path: "f")
         #expect(mkfifo(fifo.path, 0o600) == 0)
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) { close(open(fifo.path, O_WRONLY)) }
-        let watcher = DownloadWatcher(directory: fifo, onReady: { _ in }, onTimeout: { _ in })
+        let watcher = DownloadWatcher(directory: fifo, onReady: { _ in })
         let start = ContinuousClock.now
         watcher.start()
         #expect(ContinuousClock.now - start < .milliseconds(500))
@@ -491,22 +492,44 @@ struct DownloadWatcherTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Self.copyPackage(to: folder.appending(path: "download.movpkg"), complete: false, bootDate: Date(timeIntervalSinceNow: -3600))
         let ready = AsyncStream<URL>.makeStream()
-        let watcher = DownloadWatcher(directory: downloads, onReady: { ready.continuation.yield($0) }, onTimeout: { _ in })
+        let watcher = DownloadWatcher(directory: downloads, onReady: { ready.continuation.yield($0) })
         watcher.start()
         await watcher.opening?.value
         // The TV app writes the new attempt as a whole; a move puts it there in one step.
         let staging = try Self.makeFolder().appending(path: "download 1.movpkg")
         try Self.copyPackage(to: staging, complete: true, bootDate: Date())
         try FileManager.default.moveItem(at: staging, to: folder.appending(path: "download 1.movpkg"))
-        let captured = await withTaskGroup(of: URL?.self) { group in
-            group.addTask { await ready.stream.first { _ in true } }
+        let captured = await Self.firstReady(ready.stream)
+        watcher.stop()
+        #expect(captured == folder.appending(path: "download 1.movpkg"))
+    }
+
+    static func firstReady(_ stream: AsyncStream<URL>) async -> URL? {
+        await withTaskGroup(of: URL?.self) { group in
+            group.addTask { await stream.first { _ in true } }
             group.addTask { try? await Task.sleep(for: .seconds(8)); return nil }
             let first = await group.next()!
             group.cancelAll()
             return first
         }
+    }
+
+    // Breaks if a package whose tracks are still incomplete (the user cancelled the download
+    // after a moment) is not ready once its boot.xml has stopped changing.
+    @MainActor @Test func incompletePackageIsReadyOnceBootSettles() async throws {
+        let downloads = try Self.makeFolder()
+        let ready = AsyncStream<URL>.makeStream()
+        let watcher = DownloadWatcher(directory: downloads, onReady: { ready.continuation.yield($0) })
+        watcher.start()
+        await watcher.opening?.value
+        let folder = downloads.appending(path: "Title.tmp")
+        let staging = try Self.makeFolder().appending(path: "download.movpkg")
+        try Self.copyPackage(to: staging, complete: false, bootDate: Date())
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: staging, to: folder.appending(path: "download.movpkg"))
+        let captured = await Self.firstReady(ready.stream)
         watcher.stop()
-        #expect(captured == folder.appending(path: "download 1.movpkg"))
+        #expect(captured == folder.appending(path: "download.movpkg"))
     }
 }
 

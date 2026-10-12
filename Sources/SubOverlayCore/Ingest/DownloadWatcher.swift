@@ -1,15 +1,15 @@
 import Foundation
 
 /// Watches the TV app's download folder. A kernel event says a package folder appeared, or a
-/// new package inside one; then one bounded poll per folder waits until every subtitle track
-/// is complete.
+/// new package inside one; then one bounded poll per folder waits until the package lists its
+/// subtitle tracks. Tracks the download did not finish are fetched from their URLs at ingest.
 @MainActor
 public final class DownloadWatcher {
     public enum LaunchAction: Equatable { case ingest, poll, skip }
 
     static let pollInterval: DispatchTimeInterval = .seconds(2)
-    /// Subtitle tracks arrive one by one, about 100 of them, 1-2 s each.
-    nonisolated public static let pollWindow: TimeInterval = 600
+    /// `boot.xml` lists every track within seconds of a Download press.
+    nonisolated public static let pollWindow: TimeInterval = 60
 
     nonisolated public static var defaultDirectory: URL {
         URL.moviesDirectory.appending(path: "TV/Media.localized/Downloads-TV")
@@ -38,22 +38,20 @@ public final class DownloadWatcher {
 
     private let directory: URL
     private let onReady: (URL) -> Void
-    private let onTimeout: (URL) -> Void
     private var source: DispatchSourceFileSystemObject?
     /// Finishes once the folder is open and watched.
     private(set) var opening: Task<Void, Never>?
     private var known = Set<String>()
     private var folderSources: [String: DispatchSourceFileSystemObject] = [:]
     private var jobs: [String: DispatchSourceTimer] = [:]
-    /// `boot.xml` date last parsed per folder; the same date means the same content.
-    private var parsed: [String: Date] = [:]
+    /// Track folders listed at the last poll, per package folder: the same list twice means
+    /// `boot.xml` is settled.
+    private var listed: [String: [String]] = [:]
 
-    /// `onReady` gets the package URL once all subtitle tracks are complete.
-    public init(directory: URL = DownloadWatcher.defaultDirectory,
-                onReady: @escaping (URL) -> Void, onTimeout: @escaping (URL) -> Void) {
+    /// `onReady` gets the package URL once it lists its subtitle tracks, complete or not.
+    public init(directory: URL = DownloadWatcher.defaultDirectory, onReady: @escaping (URL) -> Void) {
         self.directory = directory
         self.onReady = onReady
-        self.onTimeout = onTimeout
     }
 
     /// macOS asks for media library access inside the folder's open(), which waits for the
@@ -145,25 +143,26 @@ public final class DownloadWatcher {
         jobs[folder] = timer
     }
 
+    /// Ready when every track is complete, or when the track list is the same as at the last
+    /// poll: `boot.xml` grows for a moment after the press, then only completion marks change.
     private func poll(_ folder: String, deadline: Date) {
         let pkg = package(folder)
         let finish = { [weak self] in
             self?.jobs[folder]?.cancel()
             self?.jobs[folder] = nil
+            self?.listed[folder] = nil
         }
         guard FileManager.default.fileExists(atPath: pkg.deletingLastPathComponent().path) else { return finish() }
-        if let modified = Self.bootModified(pkg), modified != parsed[folder] {
-            parsed[folder] = modified
-            if (try? MoviePackageReader.manifest(package: pkg))?.allComplete == true {
+        if let manifest = try? MoviePackageReader.manifest(package: pkg), !manifest.tracks.isEmpty {
+            let paths = manifest.tracks.map(\.path)
+            if manifest.allComplete || paths == listed[folder] {
                 finish()
                 onReady(pkg)
                 return
             }
+            listed[folder] = paths
         }
-        if Date() > deadline {
-            finish()
-            onTimeout(pkg)
-        }
+        if Date() > deadline { finish() }
     }
 
     private func packageFolders() -> [String] {

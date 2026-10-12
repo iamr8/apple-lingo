@@ -13,19 +13,37 @@ public final class HTTPClient: NSObject, HTTPTransport, URLSessionTaskDelegate {
         case notHTTP
     }
 
+    /// Which hosts a client may talk to: one host, or any host under a domain.
+    public enum HostRule: Sendable, Equatable {
+        case exact(String)
+        /// A suffix starting with a dot, such as `.apple.com`.
+        case suffix(String)
+
+        public func allows(_ host: String) -> Bool {
+            switch self {
+            case .exact(let name): host == name
+            case .suffix(let suffix): host.count > suffix.count && host.hasSuffix(suffix)
+            }
+        }
+    }
+
     static let maxResponseBytes = 8 * 1024 * 1024
 
-    private let allowedHost: String
+    private let hosts: HostRule
     private let session: URLSession
 
-    public init(allowedHost: String) {
-        self.allowedHost = allowedHost
+    public convenience init(allowedHost: String) {
+        self.init(hosts: .exact(allowedHost))
+    }
+
+    public init(hosts: HostRule) {
+        self.hosts = hosts
         session = URLSession(configuration: Self.lockedConfiguration())
         super.init()
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        guard let url = request.url, url.scheme == "https", url.host() == allowedHost, url.port == nil else {
+        guard let url = request.url, url.scheme == "https", let host = url.host(), hosts.allows(host), url.port == nil else {
             throw HTTPError.refusedURL
         }
         let (bytes, response) = try await session.bytes(for: request, delegate: self)

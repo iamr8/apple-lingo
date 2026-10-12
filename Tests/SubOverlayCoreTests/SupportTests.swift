@@ -52,3 +52,17 @@ struct HTTPClientTests {
         await #expect(throws: HTTPClient.HTTPError.self) { try await client.send(req) }
     }
 }
+
+struct HostRuleTests {
+    // Breaks if a domain rule lets a look-alike host through, or refuses a host under the domain.
+    @Test func suffixRule() {
+        let apple = HTTPClient.HostRule.suffix(".apple.com")
+        #expect(apple.allows("download-ap-aoc.tv.apple.com"))
+        #expect(apple.allows("play-edge.itunes.apple.com"))
+        #expect(!apple.allows("apple.com.evil.example"))
+        #expect(!apple.allows("evil-apple.com"))
+        #expect(!apple.allows("apple.com"))
+        #expect(HTTPClient.HostRule.exact("a.example").allows("a.example"))
+        #expect(!HTTPClient.HostRule.exact("a.example").allows("b.a.example"))
+    }
+}

@@ -47,14 +47,7 @@ final class AppModel {
     func start() {
         Notifier.requestAuthorization()
         startHotkeys()
-        let watcher = DownloadWatcher(
-            onReady: { [weak self] in self?.ingest($0) },
-            onTimeout: { [weak self] pkg in
-                let m = try? MoviePackageReader.manifest(package: pkg)
-                let title = m?.title ?? MoviePackageReader.names(fromFolder: pkg.deletingLastPathComponent().lastPathComponent).title
-                self?.notify("Subtitles not captured", "The download of \(title) stopped too early. Press Download again.",
-                             title, m?.album)
-            })
+        let watcher = DownloadWatcher(onReady: { [weak self] in self?.ingest($0) })
         watcher.start()
         self.watcher = watcher
 
@@ -125,12 +118,30 @@ final class AppModel {
         let folder = package.deletingLastPathComponent().lastPathComponent
         guard !library.hasEntry(sourcePackage: folder) else { return }
         let library = library
+        let fetcher = TrackFetcher(transport: HTTPClient(hosts: .suffix(".apple.com")))
         Task.detached {
             do {
                 let manifest = try MoviePackageReader.manifest(package: package)
                 var tracks: [String: [Cue]] = [:]
+                // A track the download finished is read from the package; any other comes from
+                // its URL. A track that fails is left out.
                 for track in manifest.tracks {
-                    tracks[track.language] = try MoviePackageReader.readTrack(track, package: package)
+                    do {
+                        if track.complete {
+                            tracks[track.language] = try MoviePackageReader.readTrack(track, package: package)
+                        } else if let url = track.url {
+                            tracks[track.language] = try await fetcher.cues(playlist: url)
+                        }
+                    } catch {
+                        Log.ingest.error("track \(track.language, privacy: .public) skipped: \(String(describing: type(of: error)), privacy: .public)")
+                    }
+                }
+                guard !tracks.isEmpty else {
+                    await MainActor.run {
+                        self.notify("Subtitles not captured", "No subtitle track of \(manifest.title) could be read. Press Download again.",
+                                    manifest.title, manifest.album)
+                    }
+                    return
                 }
                 // Any track tells where people speak; the original language's is the fullest.
                 let dialogue = tracks[manifest.originalLanguage ?? ""] ?? tracks.values.max { $0.count < $1.count } ?? []
