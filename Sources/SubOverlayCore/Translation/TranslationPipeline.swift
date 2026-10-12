@@ -252,14 +252,14 @@ public actor TranslationPipeline {
                 remaining = remaining.filter { !seen.contains(job.timing[$0].id) }
                 if remaining.isEmpty { return done }
                 let missing = job.timing[remaining[0]].id
-                throw PipelineError.badReply(reply.first { $0.id == missing }.flatMap(problem) ?? "missing cue \(missing)")
+                let why = reply.first { $0.id == missing }.flatMap(problem) ?? "missing cue \(missing)"
+                throw PipelineError.badReply(remaining.count > 1 ? "\(remaining.count) of \(indices.count) cues rejected; \(why)" : why)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 attempt += 1
                 if attempt >= Self.attempts { throw error }
-                let reason = (error as? PipelineError)?.errorDescription ?? String(describing: type(of: error))
-                Log.translation.error("attempt \(attempt) failed: \(reason, privacy: .public)")
+                Log.translation.error("attempt \(attempt) failed: \(Self.reason(for: error), privacy: .public)")
                 try await Task.sleep(for: retryDelay * (1 << (attempt - 1)))
             }
         }
@@ -376,11 +376,16 @@ public actor TranslationPipeline {
                 attempt += 1
                 // Keep provider errors (quota, model not enabled) so the user sees the reason.
                 if attempt >= Self.attempts { throw error is DecodingError ? PipelineError.badReply("not valid JSON") : error }
-                let reason = (error as? PipelineError)?.errorDescription ?? String(describing: type(of: error))
-                Log.translation.error("attempt \(attempt) failed: \(reason, privacy: .public)")
+                Log.translation.error("attempt \(attempt) failed: \(Self.reason(for: error), privacy: .public)")
                 try await Task.sleep(for: retryDelay * (1 << (attempt - 1)))
             }
         }
+    }
+
+    /// What a failed attempt logs: a pipeline or provider error's own words (cue ids, HTTP status,
+    /// the server's reason; never subtitle text), else the error's type.
+    static func reason(for error: Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? String(describing: type(of: error))
     }
 
     private func name(_ code: String) -> String {

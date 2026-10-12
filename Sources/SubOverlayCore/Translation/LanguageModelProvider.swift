@@ -16,7 +16,7 @@ public enum ProviderError: Error, LocalizedError {
         switch self {
         case .badModelID: "The model name is not valid."
         case .http(let service, let status, let message): "\(service) returned HTTP \(status)." + (message.map { " \($0)" } ?? "")
-        case .emptyReply: "The model returned no text."
+        case .emptyReply: "The model returned no answer. It may have filtered the content."
         }
     }
 
@@ -112,9 +112,11 @@ public struct LanguageModelProvider: TranslationProvider {
     }
 
     /// The library reports HTTP failures as "HTTP error (Status N): <body>"; this keeps the
-    /// status and the server's reason.
+    /// status and the server's reason. A Gemini reply with no candidate (a content filter, or
+    /// nothing to say) is the library's internal `GeminiError.noCandidate`, known by its text.
     static func mapped(_ error: Error, service: Service) -> Error {
         let text = String(describing: error)
+        if text == "No candidate in response" { return ProviderError.emptyReply }
         guard let m = text.firstMatch(of: /HTTP error \(Status (\d{3})\): (.*)/.dotMatchesNewlines()), let status = Int(m.1) else {
             return error
         }

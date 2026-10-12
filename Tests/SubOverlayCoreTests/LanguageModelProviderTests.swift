@@ -106,6 +106,20 @@ struct LanguageModelProviderTests {
         }
     }
 
+    // Breaks if a Gemini reply with no candidate (a content filter, or nothing to say) reaches
+    // the user as "GeminiError error 0".
+    @Test func geminiNoCandidateIsPlain() async throws {
+        let (session, _) = StubURLProtocol.session { _ in .init(status: 200, body: #"{"candidates":[]}"#) }
+        let provider = try LanguageModelProvider(service: .gemini, apiKey: "k", model: "gemini-9.0-flash", session: session)
+        do {
+            _ = try await provider.complete(system: "s", user: "u", schema: Reply.generationSchema)
+            Issue.record("no error")
+        } catch {
+            #expect(error is ProviderError)
+            #expect(error.localizedDescription == "The model returned no answer. It may have filtered the content.")
+        }
+    }
+
     // Breaks if a model id can change the URL path.
     @Test func rejectsBadModelID() {
         #expect(throws: ProviderError.self) {

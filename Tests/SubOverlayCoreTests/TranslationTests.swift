@@ -430,6 +430,25 @@ struct TranslationPipelineTests {
         }
     }
 
+    // Breaks if the failure names one cue while most of the chunk was rejected.
+    @Test func failureCountsRejectedCues() async {
+        let provider = EditingProvider { Array($0.dropLast(2)) }
+        do {
+            _ = try await TranslationPipeline(provider: provider, retryDelay: .zero).translate(job(cues(3))) { _ in }
+            Issue.record("no error")
+        } catch {
+            #expect(error.localizedDescription.contains("2 of 3 cues rejected; missing cue 2"))
+        }
+    }
+
+    // Breaks if a retry log line hides a provider error's status and reason.
+    @Test func retryReasonKeepsProviderDetail() {
+        struct Odd: Error {}
+        #expect(TranslationPipeline.reason(for: ProviderError.http(service: "Gemini", status: 429, message: "Quota exceeded"))
+            == "Gemini returned HTTP 429. Quota exceeded")
+        #expect(TranslationPipeline.reason(for: Odd()) == "Odd")
+    }
+
     // Breaks if cancellation does not stop the job.
     @Test func cancellationStops() async {
         let provider = EchoProvider()
