@@ -47,11 +47,11 @@ struct PlayerLogStreamTests {
                 == PlayerEvent(kind: .playing, epochMicros: 1_791_745_045_752_000))
     }
 
-    // Breaks if the wait for Apple's bumper counts as playing: the main player holds its clock
-    // through it (71.5 s for 60 s in a trace of a title start) and its clock line at the end
-    // re-anchors, so cues must not run on meanwhile.
-    @Test func interstitialWaitIsAStop() {
-        #expect(PlayerLogStream.parse(line: Self.line(Self.interstitial)) == PlayerEvent(kind: .stopped, epochMicros: 1_791_740_571_549_335))
+    // Breaks if the wait for Apple's intro, recap or bumper is a plain stop or a play: the main
+    // player parks (at 55.4 s for 55 s in a trace of a title start) while Now Playing's clock
+    // runs through the recap on the subtitles' timeline, so the merger must know which wait it is.
+    @Test func interstitialWaitIsItsOwnEvent() {
+        #expect(PlayerLogStream.parse(line: Self.line(Self.interstitial)) == PlayerEvent(kind: .interstitial, epochMicros: 1_791_740_571_549_335))
     }
 
     // Breaks if a restart of `log stream` does not reach the merger as an event between the

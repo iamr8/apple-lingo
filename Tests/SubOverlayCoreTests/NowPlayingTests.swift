@@ -361,22 +361,22 @@ struct NowPlayingMergerTests {
         #expect(abs(s.position(at: anchor + .seconds(4)) - 511) < 1e-6)
     }
 
-    // Breaks if Now Playing's clock, running 30 s ahead through Apple's bumper, is taken as a
-    // seek while the main player holds, or if the clock line at the bumper's end does not
-    // re-anchor. Trace: held at 71.517 for 60 s, then 71.296563 at rate 1.
-    @Test func bumperHoldsTheClock() throws {
+    // Breaks if the main player's parked clock (55.402 at rate 0 while Apple's intro and recap
+    // play in the other player) holds the overlay: the recap's lines are at 9-39 s of the
+    // subtitles' timeline, which Now Playing's clock follows. The clock line at the end, when
+    // the main player moves, anchors again. Trace of a title start, 13:00:36.
+    @Test func interstitialFollowsNowPlaying() throws {
         var m = NowPlayingMerger()
-        try m.apply(line: report(true, 71, epochNow - 1_000_000))
-        m.apply(event: clock(0, 71.517, epochNow))
-        m.apply(event: event(.stopped, epochNow + 10_000))
-        try m.apply(line: sample(101000000, epochNow + 30_000_000))
-        let held = try #require(m.state(receivedAt: anchor + .seconds(30), epochMicrosNow: epochNow + 30_000_000))
-        #expect(held.effectiveRate == 0)
-        #expect(held.position(at: anchor + .seconds(31)) == 71.517)
-        m.apply(event: clock(1, 71.296563, epochNow + 60_000_000))
-        m.apply(event: event(.playing, epochNow + 60_100_000))
-        let s = try #require(m.state(receivedAt: anchor + .seconds(61), epochMicrosNow: epochNow + 61_000_000))
-        #expect(abs(s.position(at: anchor + .seconds(61)) - 72.296563) < 1e-6)
+        try m.apply(line: report(true, 0, epochNow))
+        m.apply(event: event(.interstitial, epochNow + 236_000))
+        m.apply(event: clock(0, 55.402, epochNow + 8_913_000))
+        let recap = try #require(m.state(receivedAt: anchor + .seconds(13), epochMicrosNow: epochNow + 13_000_000))
+        #expect(recap.effectiveRate == 1)
+        #expect(abs(recap.position(at: anchor + .seconds(13)) - 13) < 1e-6)
+        m.apply(event: clock(1, 55.168927, epochNow + 55_440_000))
+        m.apply(event: event(.playing, epochNow + 55_703_000))
+        let content = try #require(m.state(receivedAt: anchor + .seconds(56.44), epochMicrosNow: epochNow + 56_440_000))
+        #expect(abs(content.position(at: anchor + .seconds(56.44)) - 56.168927) < 1e-6)
     }
 
     // Breaks if a clock anchor or an open hold outlives a restart of the log process: lines

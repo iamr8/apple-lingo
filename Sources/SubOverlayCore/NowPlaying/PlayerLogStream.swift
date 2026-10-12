@@ -7,6 +7,9 @@ public struct PlayerEvent: Sendable, Equatable {
         case playing
         /// The player is paused or waits for data.
         case stopped
+        /// Apple's intro, recap and bumper play in another player while the main player waits;
+        /// Now Playing's clock runs through them on the same timeline as the subtitles.
+        case interstitial
         /// The main player's own clock: at `time` seconds, moving at `rate`, when the line was written.
         case timebase(rate: Double, time: Double)
         /// The log process restarted: lines in between were lost.
@@ -88,10 +91,12 @@ public struct PlayerLogStream: Sendable {
             return PlayerEvent(kind: .timebase(rate: rate, time: time), epochMicros: micros)
         }
         guard let range = message.range(of: Self.marker) else { return nil }
-        switch message[range.upperBound...].prefix(while: \.isLetter) {
+        let rest = message[range.upperBound...]
+        switch rest.prefix(while: \.isLetter) {
         case "Playing": return PlayerEvent(kind: .playing, epochMicros: micros)
-        // A wait for Apple's bumper holds the main player's clock like any other wait.
-        case "Paused", "WaitingToPlayAtSpecifiedRate": return PlayerEvent(kind: .stopped, epochMicros: micros)
+        case "Paused": return PlayerEvent(kind: .stopped, epochMicros: micros)
+        case "WaitingToPlayAtSpecifiedRate":
+            return PlayerEvent(kind: rest.contains("DuringInterstitialEvent") ? .interstitial : .stopped, epochMicros: micros)
         default: return nil
         }
     }

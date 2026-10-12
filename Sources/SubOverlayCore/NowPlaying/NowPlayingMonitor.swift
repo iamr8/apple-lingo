@@ -31,6 +31,10 @@ public struct NowPlayingMerger: Sendable {
     /// microseconds), moving at `rate`. The TV app's Now Playing position is rounded down at a
     /// pause and behind after a seek, so while the log is alive this is the position's anchor.
     private var clock: Clock?
+    /// True while Apple's intro, recap or bumper plays in the other player: the main player is
+    /// parked, so its clock lines wait, and Now Playing's clock (which runs through them on the
+    /// subtitles' timeline) decides.
+    private var interstitial = false
 
     private struct Report: Equatable {
         var elapsed: Double, sampled: Double?, playing: Bool, rate: Double
@@ -60,6 +64,7 @@ public struct NowPlayingMerger: Sendable {
     private mutating func resetClock() {
         report = nil
         clock = nil
+        interstitial = false
         settleUntil = 0
         pausedSeek = false
         stalledSince = nil
@@ -117,18 +122,29 @@ public struct NowPlayingMerger: Sendable {
             settleUntil = 0
         case .playing:
             logAlive = true
+            interstitial = false
             if let since = stalledSince {
                 stalledTotal += max(0, event.epochMicros - since)
                 stalledSince = nil
             }
         case .timebase(let rate, let time):
             logAlive = true
+            // The parked main player's clock says nothing about the recap on screen.
+            if interstitial, rate == 0 { return }
+            interstitial = false
             clock = Clock(time: time, sampled: event.epochMicros, rate: rate)
             settleUntil = 0
             stalledTotal = 0
             // At rate 0 the player stands (pause, seek, stall) until a line says it moves; at
             // any other rate it moves from here.
             stalledSince = rate == 0 ? max(stalledSince ?? 0, event.epochMicros) : nil
+        case .interstitial:
+            logAlive = true
+            interstitial = true
+            clock = nil
+            settleUntil = 0
+            stalledSince = nil
+            stalledTotal = 0
         case .logRestarted:
             // Lines were lost: the clock and any hold may be stale.
             logEnded()
@@ -138,6 +154,7 @@ public struct NowPlayingMerger: Sendable {
     /// The log ended: the fallback decides the waits until the log speaks again.
     public mutating func logEnded() {
         logAlive = false
+        interstitial = false
         clock = nil
         stalledSince = nil
         stalledTotal = 0
