@@ -442,6 +442,15 @@ struct TranslationPipelineTests {
         #expect(out?.first?.text == "۶۱۲-۵۷۱۱.")
     }
 
+    // Breaks if numbers that stand apart in a sentence ("a '79 Dodge B200", which Persian says
+    // as "Dodge B200 model 79", as on The Place I Lie) are treated like a swapped phone number.
+    @Test func separateNumbersMayMove() async throws {
+        let car = [Cue(id: 1, start: 1, end: 3, text: "for a '79 Dodge B200")]
+        let moved = EchoProvider { _, _ in "دوج بی ۲۰۰ مدل ۷۹" }
+        let out = try await TranslationPipeline(provider: moved, retryDelay: .zero).translate(job(car)) { _ in }
+        #expect(out.first?.text == "دوج بی ۲۰۰ مدل ۷۹")
+    }
+
     // Breaks if "invalid translation" does not say what was wrong.
     @Test func invalidReplySaysWhy() async {
         let provider = EditingProvider { Array($0.dropLast()) }

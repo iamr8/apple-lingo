@@ -192,19 +192,22 @@ public actor TranslationPipeline {
         return ""
     }
 
-    /// A reply that keeps the source's numbers but in another order, such as a phone number
-    /// written right to left. Persian and Arabic digits count as their ASCII values.
+    /// A reply that keeps the parts of a compound number (a phone number, a time, a date) but
+    /// in another order, such as a phone number written right to left. Numbers that stand apart
+    /// may move with the sentence. Persian and Arabic digits count as their ASCII values.
     static func numberProblem(_ item: Item, source: String) -> String? {
-        func groups(_ text: String) -> [String] {
+        func compounds(_ text: String) -> [[String]] {
             let ascii = String(text.unicodeScalars.map { scalar -> Character in
                 if let v = scalar.properties.numericType == .decimal ? scalar.properties.numericValue : nil { return Character(String(Int(v))) }
                 return Character(scalar)
             })
-            return ascii.matches(of: /\d+/).map { String($0.output) }
+            return ascii.matches(of: /\d+(?:[-:.\/]\d+)+/).map { $0.output.split { "-:./".contains($0) }.map(String.init) }
         }
-        let want = groups(source), got = groups(item.text)
-        guard want.count >= 2, got != want, got.sorted() == want.sorted() else { return nil }
-        return "cue \(item.id) changes the order of numbers"
+        let want = compounds(source), got = compounds(item.text)
+        for parts in want where !got.contains(parts) && got.contains(where: { $0.sorted() == parts.sorted() }) {
+            return "cue \(item.id) changes the order of numbers"
+        }
+        return nil
     }
 
     /// Translates the cues at `indices` of the base track. Valid cues of a reply are kept; cues the
