@@ -20,6 +20,22 @@ struct PlayerLogStreamTests {
              subsystem: "com.apple.coremedia", category: "")
     }
 
+    /// The stitched timeline's seek line; its target is in Now Playing's timeline.
+    static func seek(_ target: String, from: String) -> String {
+        line("<<<< FigItemIntegratedTimeline >>>> fiit_SeekToTimeWithOptions: 0x7a869adc00: dispatching seek to target time \(target) from \(from), source time 0.002, source segment [I] 2000-01-01 00:00:00.000",
+             subsystem: "com.apple.coremedia", category: "")
+    }
+
+    // Breaks if a seek line is not an event with its target. A Skip press is such a seek, and the
+    // TV app wrote no Now Playing position after two of four skips (WhatsHerName, 2026-10-13).
+    @Test func parsesSeekLines() {
+        #expect(PlayerLogStream.parse(line: Self.seek("39.081", from: "12.575"))
+                == PlayerEvent(kind: .seek(target: 39.081), epochMicros: 1_791_740_571_549_335))
+        #expect(PlayerLogStream.parse(line: Self.seek("0", from: "125.65"))
+                == PlayerEvent(kind: .seek(target: 0), epochMicros: 1_791_740_571_549_335))
+        #expect(PlayerLogStream.parse(line: Self.seek("nan", from: "12.575")) == nil)
+    }
+
     // Breaks if the player's own clock line is not an event with its rate, time and line time, or
     // if a rate of 0 (pause, seek landing) is lost. Trace of a resume and of a seek landing.
     @Test func parsesTimebaseLines() {

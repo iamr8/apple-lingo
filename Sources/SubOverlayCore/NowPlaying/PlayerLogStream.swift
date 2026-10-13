@@ -12,6 +12,8 @@ public struct PlayerEvent: Sendable, Equatable {
         case interstitial
         /// The main player's own clock: at `time` seconds, moving at `rate`, when the line was written.
         case timebase(rate: Double, time: Double)
+        /// A seek to `target` seconds of Now Playing's timeline, the Skip buttons included.
+        case seek(target: Double)
         /// The log process restarted: lines in between were lost.
         case logRestarted
     }
@@ -34,11 +36,13 @@ public struct PlayerLogStream: Sendable {
     static let log = URL(filePath: "/usr/bin/log")
     static let maxLineLength = 16 * 1024
     /// The main player's state only (the interstitial player logs the same lines for Apple's
-    /// bumpers), and the interstitial coordinator's clock line, which carries the main player's
-    /// timebase at every rate change: pause, resume, seek, stall.
-    static let predicate = #"process == "TV" AND ((subsystem == "com.apple.AppleTV.playback" AND category == "TVPPlayer" AND eventMessage CONTAINS "main player timeControlStatus did change") OR (subsystem == "com.apple.coremedia" AND eventMessage CONTAINS "FigPlayerInterstitial" AND eventMessage CONTAINS "State logging - timebaseRate"))"#
+    /// bumpers), the interstitial coordinator's clock line, which carries the main player's
+    /// timebase at every rate change (pause, resume, seek, stall), and the stitched timeline's
+    /// seek line, which carries every seek's target, the Skip buttons included.
+    static let predicate = #"process == "TV" AND ((subsystem == "com.apple.AppleTV.playback" AND category == "TVPPlayer" AND eventMessage CONTAINS "main player timeControlStatus did change") OR (subsystem == "com.apple.coremedia" AND ((eventMessage CONTAINS "FigPlayerInterstitial" AND eventMessage CONTAINS "State logging - timebaseRate") OR (eventMessage CONTAINS "FigItemIntegratedTimeline" AND eventMessage CONTAINS "dispatching seek to target time"))))"#
     static let marker = "main player timeControlStatus did change to AVPlayerTimeControlStatus"
     static let clockMarker = "State logging - timebaseRate"
+    static let seekMarker = "dispatching seek to target time"
 
     public init() {}
 
@@ -80,6 +84,16 @@ public struct PlayerLogStream: Sendable {
               let micros = epochMicros(decoded.timestamp)
         else { return nil }
         let message = decoded.eventMessage
+        if message.contains(Self.seekMarker) {
+            // `<<<< FigItemIntegratedTimeline >>>> fiit_SeekToTimeWithOptions: 0x...: dispatching seek
+            // to target time 39.081 from 12.575, ...`: a seek in Now Playing's timeline. A Skip press
+            // is one, and the TV app often writes no Now Playing position after it.
+            guard message.contains("FigItemIntegratedTimeline"),
+                  let match = message.firstMatch(of: /dispatching seek to target time (\d+(?:\.\d+)?) from/),
+                  let target = Double(match.1)
+            else { return nil }
+            return PlayerEvent(kind: .seek(target: target), epochMicros: micros)
+        }
         if message.contains(Self.clockMarker) {
             // `<<<< FigPlayerInterstitial >>>> fpic_checkScheduledTransition_block_invoke: 0x... State
             // logging - timebaseRate 1.000000, timebaseTime 1994.528930, ...`: the main player's clock,

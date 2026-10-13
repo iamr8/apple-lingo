@@ -145,6 +145,20 @@ public struct NowPlayingMerger: Sendable {
             settleUntil = 0
             stalledSince = nil
             stalledTotal = 0
+        case .seek(let target):
+            logAlive = true
+            settleUntil = 0
+            stalledTotal = 0
+            if interstitial {
+                // Apple's intro or recap plays on from the target in the other player, and the TV
+                // app often writes no Now Playing position after a Skip press.
+                report = Report(elapsed: target, sampled: event.epochMicros, playing: report?.playing ?? false, rate: report?.rate ?? 1)
+                stalledSince = nil
+            } else {
+                // The main player stands at the target until a line says it moves.
+                clock = Clock(time: target, sampled: event.epochMicros, rate: 0)
+                stalledSince = event.epochMicros
+            }
         case .logRestarted:
             // Lines were lost: the clock and any hold may be stale.
             logEnded()

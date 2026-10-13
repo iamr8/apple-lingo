@@ -379,6 +379,39 @@ struct NowPlayingMergerTests {
         #expect(abs(content.position(at: anchor + .seconds(56.44)) - 56.168927) < 1e-6)
     }
 
+    // Breaks if a skip during Apple's recap (a seek in the stitched timeline, which the log shows)
+    // does not move the position to its target when Now Playing writes nothing after it, or if the
+    // Now Playing write that follows a later skip is not taken. Trace of WhatsHerName, 22:32:54:
+    // play at 0.07, skip at 12.58 to 39.08 with no write, skip at 41.13 to 72.07, written 0.83 s
+    // later as 72.07.
+    @Test func skipDuringInterstitialMovesToTheSeekTarget() throws {
+        var m = NowPlayingMerger()
+        m.apply(event: event(.interstitial, epochNow - 173_000))
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","playing":true,"playbackRate":1,"elapsedTimeMicros":74000,"timestampEpochMicros":\#(epochNow)}"#))
+        m.apply(event: event(.seek(target: 39.081), epochNow + 12_633_000))
+        let skipped = try #require(m.state(receivedAt: anchor + .seconds(14.633), epochMicrosNow: epochNow + 14_633_000))
+        #expect(abs(skipped.position(at: anchor + .seconds(14.633)) - 41.081) < 1e-6)
+        m.apply(event: event(.seek(target: 72.073), epochNow + 15_423_000))
+        try m.apply(line: sample(72_070_000, epochNow + 16_250_000))
+        let second = try #require(m.state(receivedAt: anchor + .seconds(17.25), epochMicrosNow: epochNow + 17_250_000))
+        #expect(abs(second.position(at: anchor + .seconds(17.25)) - 73.07) < 1e-6)
+    }
+
+    // Breaks if a seek the log shows while the main player plays, with no Now Playing write after
+    // it, does not park the position at the target until the player's clock moves again.
+    @Test func seekLineWithoutReportParksAtTheTarget() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: report(true, 100, epochNow - 10_000_000))
+        m.apply(event: clock(1, 100, epochNow - 10_000_000))
+        m.apply(event: event(.seek(target: 500), epochNow))
+        let parked = try #require(m.state(receivedAt: anchor + .seconds(1), epochMicrosNow: epochNow + 1_000_000))
+        #expect(parked.position(at: anchor + .seconds(1)) == 500)
+        m.apply(event: clock(1, 500.3, epochNow + 2_000_000))
+        m.apply(event: event(.playing, epochNow + 2_010_000))
+        let moving = try #require(m.state(receivedAt: anchor + .seconds(3), epochMicrosNow: epochNow + 3_000_000))
+        #expect(abs(moving.position(at: anchor + .seconds(3)) - 501.3) < 1e-6)
+    }
+
     // Breaks if a clock anchor or an open hold outlives a restart of the log process: lines
     // were lost, so Now Playing decides until the next clock line.
     @Test func logRestartDropsAnchorAndHold() throws {
