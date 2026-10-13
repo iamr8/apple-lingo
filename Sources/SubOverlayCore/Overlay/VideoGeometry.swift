@@ -5,11 +5,14 @@ public struct WindowInfo: Sendable, Equatable {
     public var pid: Int32
     public var layer: Int
     public var bounds: CGRect
+    /// `kCGWindowNumber`: windows made later have higher numbers.
+    public var number: Int
 
-    public init(pid: Int32, layer: Int, bounds: CGRect) {
+    public init(pid: Int32, layer: Int, bounds: CGRect, number: Int = 0) {
         self.pid = pid
         self.layer = layer
         self.bounds = bounds
+        self.number = number
     }
 }
 
@@ -21,18 +24,19 @@ public enum VideoGeometry {
         public var fullScreen: Bool
     }
 
-    /// The TV app's video window: a full-screen window if there is one, else the frontmost window
-    /// (`windows` is front to back, as CG lists them). The player sits in front of the library
-    /// window, which can be larger and on another screen. Layer 0 only, so the PiP window is
-    /// ignored; strips and popovers below 320x180 are too. A full-screen window spans a screen's
-    /// width down to its bottom; on a display with a notch it starts below the menu bar area.
+    /// The TV app's video window: a full-screen window if there is one, else the newest window
+    /// (`windows` is front to back, as CG lists them; equal numbers keep the front one). The TV
+    /// app opens its player after the library window, which can be larger, on another screen,
+    /// and in front after a click on it. Layer 0 only, so the PiP window is ignored; strips and
+    /// popovers below 320x180 are too. A full-screen window spans a screen's width down to its
+    /// bottom; on a display with a notch it starts below the menu bar area.
     public static func pickVideoWindow(_ windows: [WindowInfo], pid: Int32, screens: [CGRect]) -> PickedWindow? {
         let candidates = windows.filter { $0.pid == pid && $0.layer == 0 && $0.bounds.width >= 320 && $0.bounds.height >= 180 }
         func isFullScreen(_ r: CGRect) -> Bool {
             screens.contains { s in r.minX == s.minX && r.width == s.width && r.maxY == s.maxY && r.height >= s.height - 80 }
         }
         if let full = candidates.first(where: { isFullScreen($0.bounds) }) { return PickedWindow(bounds: full.bounds, fullScreen: true) }
-        return candidates.first.map { PickedWindow(bounds: $0.bounds, fullScreen: false) }
+        return candidates.max { $0.number < $1.number }.map { PickedWindow(bounds: $0.bounds, fullScreen: false) }
     }
 
     /// A windowed player has the video's own aspect, so the video is the window. In full screen

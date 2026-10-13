@@ -63,6 +63,20 @@ struct VideoGeometryTests {
         #expect(VideoGeometry.pickVideoWindow(windows, pid: 7, screens: [builtIn, external]) == .init(bounds: player, fullScreen: false))
     }
 
+    // Breaks if the library window, raised in front of the player by a click or an app activation,
+    // wins over the player on another screen: the player is the newer window. Values from a real
+    // setup (window numbers 1268 and 1595, captions drawn on the built-in screen).
+    @Test func newerPlayerWinsOverLibraryInFront() {
+        let builtIn = CGRect(x: 0, y: 0, width: 2056, height: 1329)
+        let external = CGRect(x: 89, y: -1080, width: 1920, height: 1080)
+        let player = CGRect(x: 117, y: -992, width: 1867, height: 934)
+        let windows = [
+            WindowInfo(pid: 7, layer: 0, bounds: CGRect(x: 68, y: 159, width: 1920, height: 1050), number: 1268),
+            WindowInfo(pid: 7, layer: 0, bounds: player, number: 1595),
+        ]
+        #expect(VideoGeometry.pickVideoWindow(windows, pid: 7, screens: [builtIn, external]) == .init(bounds: player, fullScreen: false))
+    }
+
     // Breaks if a full-screen window does not win over a larger area rule.
     @Test func fullScreenWindowWins() {
         let other = CGRect(x: 1920, y: 0, width: 2560, height: 1440)

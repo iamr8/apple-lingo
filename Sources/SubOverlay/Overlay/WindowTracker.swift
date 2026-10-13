@@ -18,7 +18,7 @@ enum WindowTracker {
                   let dict = info[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: dict)
             else { return nil }
-            return WindowInfo(pid: owner, layer: layer, bounds: bounds)
+            return WindowInfo(pid: owner, layer: layer, bounds: bounds, number: info[kCGWindowNumber as String] as? Int ?? 0)
         }
         let height = primary.frame.height
         let screens = NSScreen.screens.map { s in
