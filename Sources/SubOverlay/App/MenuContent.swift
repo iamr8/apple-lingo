@@ -11,6 +11,9 @@ struct MenuContent: View {
         Button("Add Subtitles…") { model.showAddSubtitles() }
         if model.entry?.meta.targetLanguage != nil {
             Text("Offset: \(model.offset, format: .number.precision(.fractionLength(1)).sign(strategy: .always())) s")
+            if model.offset != 0 {
+                Button("Reset Offset") { model.resetOffset() }
+            }
         }
         Divider()
         SettingsLink { Text("Settings…") }

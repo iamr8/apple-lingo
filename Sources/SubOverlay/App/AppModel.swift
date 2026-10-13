@@ -309,6 +309,10 @@ final class AppModel {
         KeyboardShortcuts.onKeyUp(for: .nudgeDown) { [weak self] in self?.adjust(nudge: 1) }
     }
 
+    func resetOffset() {
+        adjust(offset: -offset)
+    }
+
     func adjust(offset delta: Double = 0, nudge nudgeDelta: Double = 0) {
         guard var entry else { return }
         entry.meta.offset = ((entry.meta.offset + delta) * 10).rounded() / 10

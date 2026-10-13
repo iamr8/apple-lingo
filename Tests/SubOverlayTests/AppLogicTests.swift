@@ -148,6 +148,19 @@ struct AppModelTests {
         #expect(library.entry(album: "Black Bird", title: "Pilot")?.meta.offset == 0.3)
     }
 
+    // Breaks if the menu's reset leaves an offset on the playing title or in its meta.
+    @Test func resetOffsetClearsTheTitle() throws {
+        var entry = try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["en": []], sourcePackage: "p")
+        entry.meta.targetLanguage = "en"
+        try entry.saveMeta()
+        let model = AppModel(library: library, keychain: Keychain(service: "test.\(UUID())")) { _, _, _, _ in }
+        model.update(playing("Pilot", album: "Black Bird"))
+        model.adjust(offset: -2.5)
+        model.resetOffset()
+        #expect(model.offset == 0)
+        #expect(library.entry(album: "Black Bird", title: "Pilot")?.meta.offset == 0)
+    }
+
     // Breaks if translation ignores the provider chosen in Settings and uses the Gemini key.
     @Test func translateUsesSelectedProvider() async throws {
         let entry = try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["en": []], sourcePackage: "p")
