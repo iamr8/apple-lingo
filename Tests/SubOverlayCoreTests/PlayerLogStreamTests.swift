@@ -84,10 +84,24 @@ struct PlayerLogStreamTests {
         #expect(kinds == [.timebase(rate: 1, time: 5), .logRestarted, .playing])
     }
 
-    // Breaks if the stream header, the interstitial player's changes, or a broken line become events.
+    static let otherPlaying = "AVPlayer <private> interstitial player timeControlStatus did change to AVPlayerTimeControlStatusPlaying.  reasonForWaiting is (null)"
+    static let otherWaiting = "AVPlayer <private> interstitial player timeControlStatus did change to AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate.  reasonForWaiting is AVPlayerWaitingWhileEvaluatingBufferingRateReason"
+    static let otherPaused = "AVPlayer <private> interstitial player timeControlStatus did change to AVPlayerTimeControlStatusPaused.  reasonForWaiting is (null)"
+
+    // Breaks if the other player's state lines are not events of their own: after a Skip press
+    // its next item buffers 0.1 to 0.65 s before its Playing line (4 skips, WhatsHerName,
+    // 2026-10-13), and the main player's lines say nothing about it.
+    @Test func otherPlayerLinesAreTheirOwnEvents() {
+        #expect(PlayerLogStream.parse(line: Self.line(Self.otherPlaying)) == PlayerEvent(kind: .otherPlaying, epochMicros: 1_791_740_571_549_335))
+        #expect(PlayerLogStream.parse(line: Self.line(Self.otherWaiting)) == PlayerEvent(kind: .otherStopped, epochMicros: 1_791_740_571_549_335))
+        #expect(PlayerLogStream.parse(line: Self.line(Self.otherPaused)) == PlayerEvent(kind: .otherStopped, epochMicros: 1_791_740_571_549_335))
+        #expect(PlayerLogStream.parse(line: Self.line(Self.playing)) == PlayerEvent(kind: .playing, epochMicros: 1_791_740_571_549_335))
+    }
+
+    // Breaks if the stream header, another player line, or a broken line become events.
     @Test func ignoresOtherLines() {
         #expect(PlayerLogStream.parse(line: #"Filtering the log data using "process == "TV" AND eventMessage CONTAINS "main player timeControlStatus did change""#) == nil)
-        #expect(PlayerLogStream.parse(line: Self.line("AVPlayer <private> interstitial player timeControlStatus did change to AVPlayerTimeControlStatusPlaying.  reasonForWaiting is (null)")) == nil)
+        #expect(PlayerLogStream.parse(line: Self.line("After becoming ready to play, main player timeControlStatus is AVPlayerTimeControlStatusPaused")) == nil)
         #expect(PlayerLogStream.parse(line: Self.line("AVPlayer rate did change to 1.000000")) == nil)
         #expect(PlayerLogStream.parse(line: Self.line(Self.playing, at: "yesterday")) == nil)
         #expect(PlayerLogStream.parse(line: "{") == nil)

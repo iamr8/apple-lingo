@@ -33,7 +33,7 @@ public struct NowPlayingMerger: Sendable {
     private var clock: Clock?
     /// True while Apple's intro, recap or bumper plays in the other player: the main player is
     /// parked, so its clock lines wait, and Now Playing's clock (which runs through them on the
-    /// subtitles' timeline) decides.
+    /// subtitles' timeline) decides. The other player's own lines start and end the stalls.
     private var interstitial = false
 
     private struct Report: Equatable {
@@ -151,13 +151,27 @@ public struct NowPlayingMerger: Sendable {
             stalledTotal = 0
             if interstitial {
                 // Apple's intro or recap plays on from the target in the other player, and the TV
-                // app often writes no Now Playing position after a Skip press.
+                // app often writes no Now Playing position after a Skip press. The other player
+                // buffers its next item first: the target stands until its Playing line.
                 report = Report(elapsed: target, sampled: event.epochMicros, playing: report?.playing ?? false, rate: report?.rate ?? 1)
-                stalledSince = nil
+                stalledSince = event.epochMicros
             } else {
                 // The main player stands at the target until a line says it moves.
                 clock = Clock(time: target, sampled: event.epochMicros, rate: 0)
                 stalledSince = event.epochMicros
+            }
+        case .otherStopped:
+            // Only while the other player has the picture: at a content start its Paused line
+            // follows the main player's Playing line.
+            guard interstitial else { return }
+            logAlive = true
+            if stalledSince == nil { stalledSince = max(event.epochMicros, report?.sampled ?? 0) }
+        case .otherPlaying:
+            guard interstitial else { return }
+            logAlive = true
+            if let since = stalledSince {
+                stalledTotal += max(0, event.epochMicros - since)
+                stalledSince = nil
             }
         case .logRestarted:
             // Lines were lost: the clock and any hold may be stale.

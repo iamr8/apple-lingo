@@ -382,19 +382,56 @@ struct NowPlayingMergerTests {
     // Breaks if a skip during Apple's recap (a seek in the stitched timeline, which the log shows)
     // does not move the position to its target when Now Playing writes nothing after it, or if the
     // Now Playing write that follows a later skip is not taken. Trace of WhatsHerName, 22:32:54:
-    // play at 0.07, skip at 12.58 to 39.08 with no write, skip at 41.13 to 72.07, written 0.83 s
-    // later as 72.07.
+    // play at 0.07, skip at 12.58 to 39.08 with no write (the other player's Playing line 0.64 s
+    // later), skip at 41.13 to 72.07 (Playing 0.43 s later), written 0.83 s later as 72.07.
     @Test func skipDuringInterstitialMovesToTheSeekTarget() throws {
         var m = NowPlayingMerger()
         m.apply(event: event(.interstitial, epochNow - 173_000))
         try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","playing":true,"playbackRate":1,"elapsedTimeMicros":74000,"timestampEpochMicros":\#(epochNow)}"#))
         m.apply(event: event(.seek(target: 39.081), epochNow + 12_633_000))
+        m.apply(event: event(.otherPlaying, epochNow + 13_276_000))
         let skipped = try #require(m.state(receivedAt: anchor + .seconds(14.633), epochMicrosNow: epochNow + 14_633_000))
-        #expect(abs(skipped.position(at: anchor + .seconds(14.633)) - 41.081) < 1e-6)
+        #expect(abs(skipped.position(at: anchor + .seconds(14.633)) - 40.438) < 1e-6)
         m.apply(event: event(.seek(target: 72.073), epochNow + 15_423_000))
+        m.apply(event: event(.otherPlaying, epochNow + 15_848_000))
         try m.apply(line: sample(72_070_000, epochNow + 16_250_000))
         let second = try #require(m.state(receivedAt: anchor + .seconds(17.25), epochMicrosNow: epochNow + 17_250_000))
         #expect(abs(second.position(at: anchor + .seconds(17.25)) - 73.07) < 1e-6)
+    }
+
+    // Breaks if the other player's Paused line, which follows the main player's Playing line at
+    // every content start (22:33:24.365 and .369 in the trace above), stalls the content.
+    @Test func otherPlayerStopOutsideAnInterstitialIsIgnored() throws {
+        var m = NowPlayingMerger()
+        m.apply(event: event(.interstitial, epochNow - 14_000_000))
+        try m.apply(line: report(true, 72, epochNow - 14_000_000))
+        m.apply(event: clock(1, 86.377, epochNow - 271_000))
+        m.apply(event: event(.playing, epochNow))
+        m.apply(event: event(.otherStopped, epochNow + 4_000))
+        let content = try #require(m.state(receivedAt: anchor + .seconds(1), epochMicrosNow: epochNow + 1_000_000))
+        #expect(content.effectiveRate == 1)
+        #expect(abs(content.position(at: anchor + .seconds(1)) - 87.648) < 1e-6)
+    }
+
+    // Breaks if the position runs from the seek line instead of standing at the target until the
+    // other player's Playing line: the recap's lines came 0.86 s early for 4.8 s. Trace of
+    // WhatsHerName, 23:10:59: skip to 39.081, the other player's Waiting line 0.635 s later and its
+    // Playing line at 0.639 s, Now Playing 43.016 at 4.794 s (0.22 s behind the Playing line's
+    // clock, taken).
+    @Test func skipParksUntilTheOtherPlayerPlays() throws {
+        var m = NowPlayingMerger()
+        m.apply(event: event(.interstitial, epochNow - 12_633_000))
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","playing":true,"playbackRate":1,"elapsedTimeMicros":1884000,"timestampEpochMicros":\#(epochNow - 10_742_000)}"#))
+        m.apply(event: event(.seek(target: 39.081), epochNow))
+        m.apply(event: event(.otherStopped, epochNow + 635_000))
+        let parked = try #require(m.state(receivedAt: anchor + .seconds(0.637), epochMicrosNow: epochNow + 637_000))
+        #expect(parked.position(at: anchor + .seconds(0.637)) == 39.081)
+        m.apply(event: event(.otherPlaying, epochNow + 639_000))
+        let moving = try #require(m.state(receivedAt: anchor + .seconds(4.794), epochMicrosNow: epochNow + 4_794_000))
+        #expect(abs(moving.position(at: anchor + .seconds(4.794)) - 43.236) < 1e-6)
+        try m.apply(line: sample(43_016_000, epochNow + 4_794_000))
+        let written = try #require(m.state(receivedAt: anchor + .seconds(5.794), epochMicrosNow: epochNow + 5_794_000))
+        #expect(abs(written.position(at: anchor + .seconds(5.794)) - 44.016) < 1e-6)
     }
 
     // Breaks if a seek the log shows while the main player plays, with no Now Playing write after

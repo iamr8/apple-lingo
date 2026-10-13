@@ -14,6 +14,11 @@ public struct PlayerEvent: Sendable, Equatable {
         case timebase(rate: Double, time: Double)
         /// A seek to `target` seconds of Now Playing's timeline, the Skip buttons included.
         case seek(target: Double)
+        /// The other player, with Apple's intro, recap or bumper, moves.
+        case otherPlaying
+        /// The other player is paused or waits for data. After a Skip press its next item buffers
+        /// 0.1 to 0.65 s before it moves.
+        case otherStopped
         /// The log process restarted: lines in between were lost.
         case logRestarted
     }
@@ -35,12 +40,14 @@ public struct PlayerEvent: Sendable, Equatable {
 public struct PlayerLogStream: Sendable {
     static let log = URL(filePath: "/usr/bin/log")
     static let maxLineLength = 16 * 1024
-    /// The main player's state only (the interstitial player logs the same lines for Apple's
-    /// bumpers), the interstitial coordinator's clock line, which carries the main player's
-    /// timebase at every rate change (pause, resume, seek, stall), and the stitched timeline's
-    /// seek line, which carries every seek's target, the Skip buttons included.
-    static let predicate = #"process == "TV" AND ((subsystem == "com.apple.AppleTV.playback" AND category == "TVPPlayer" AND eventMessage CONTAINS "main player timeControlStatus did change") OR (subsystem == "com.apple.coremedia" AND ((eventMessage CONTAINS "FigPlayerInterstitial" AND eventMessage CONTAINS "State logging - timebaseRate") OR (eventMessage CONTAINS "FigItemIntegratedTimeline" AND eventMessage CONTAINS "dispatching seek to target time"))))"#
+    /// The main player's state, the other player's state (it plays Apple's intro, recap and
+    /// bumper, and buffers after a Skip press), the interstitial coordinator's clock line, which
+    /// carries the main player's timebase at every rate change (pause, resume, seek, stall), and
+    /// the stitched timeline's seek line, which carries every seek's target, the Skip buttons
+    /// included.
+    static let predicate = #"process == "TV" AND ((subsystem == "com.apple.AppleTV.playback" AND category == "TVPPlayer" AND (eventMessage CONTAINS "main player timeControlStatus did change" OR eventMessage CONTAINS "interstitial player timeControlStatus did change")) OR (subsystem == "com.apple.coremedia" AND ((eventMessage CONTAINS "FigPlayerInterstitial" AND eventMessage CONTAINS "State logging - timebaseRate") OR (eventMessage CONTAINS "FigItemIntegratedTimeline" AND eventMessage CONTAINS "dispatching seek to target time"))))"#
     static let marker = "main player timeControlStatus did change to AVPlayerTimeControlStatus"
+    static let otherMarker = "interstitial player timeControlStatus did change to AVPlayerTimeControlStatus"
     static let clockMarker = "State logging - timebaseRate"
     static let seekMarker = "dispatching seek to target time"
 
@@ -103,6 +110,13 @@ public struct PlayerLogStream: Sendable {
                   let rate = Double(match.1), let time = Double(match.2)
             else { return nil }
             return PlayerEvent(kind: .timebase(rate: rate, time: time), epochMicros: micros)
+        }
+        if let range = message.range(of: Self.otherMarker) {
+            switch message[range.upperBound...].prefix(while: \.isLetter) {
+            case "Playing": return PlayerEvent(kind: .otherPlaying, epochMicros: micros)
+            case "Paused", "WaitingToPlayAtSpecifiedRate": return PlayerEvent(kind: .otherStopped, epochMicros: micros)
+            default: return nil
+            }
         }
         guard let range = message.range(of: Self.marker) else { return nil }
         let rest = message[range.upperBound...]
