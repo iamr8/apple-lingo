@@ -15,6 +15,9 @@ public struct NowPlayingMerger: Sendable {
     /// measured) and reports nothing more. The player log says when the player moves again;
     /// without it, the clock waits this long from the report's sample time.
     static let seekSettle = 1.5
+    /// Seconds from the other player's Playing line to its first frame: 0.19, 0.22 and 0.24
+    /// measured against Now Playing's next write after a Skip press.
+    static let otherStart = 0.2
     private var report: Report?
     /// Epoch microseconds before which the clock does not move; 0 when not settling. Used only
     /// while no player event has arrived.
@@ -170,7 +173,7 @@ public struct NowPlayingMerger: Sendable {
             guard interstitial else { return }
             logAlive = true
             if let since = stalledSince {
-                stalledTotal += max(0, event.epochMicros - since)
+                stalledTotal += max(0, event.epochMicros - since) + Self.otherStart * 1e6
                 stalledSince = nil
             }
         case .logRestarted:

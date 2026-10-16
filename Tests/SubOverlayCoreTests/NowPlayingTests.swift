@@ -383,7 +383,8 @@ struct NowPlayingMergerTests {
     // does not move the position to its target when Now Playing writes nothing after it, or if the
     // Now Playing write that follows a later skip is not taken. Trace of WhatsHerName, 22:32:54:
     // play at 0.07, skip at 12.58 to 39.08 with no write (the other player's Playing line 0.64 s
-    // later), skip at 41.13 to 72.07 (Playing 0.43 s later), written 0.83 s later as 72.07.
+    // later, its first frame 0.2 s after that), skip at 41.13 to 72.07 (Playing 0.43 s later),
+    // written 0.83 s later as 72.07.
     @Test func skipDuringInterstitialMovesToTheSeekTarget() throws {
         var m = NowPlayingMerger()
         m.apply(event: event(.interstitial, epochNow - 173_000))
@@ -391,7 +392,7 @@ struct NowPlayingMergerTests {
         m.apply(event: event(.seek(target: 39.081), epochNow + 12_633_000))
         m.apply(event: event(.otherPlaying, epochNow + 13_276_000))
         let skipped = try #require(m.state(receivedAt: anchor + .seconds(14.633), epochMicrosNow: epochNow + 14_633_000))
-        #expect(abs(skipped.position(at: anchor + .seconds(14.633)) - 40.438) < 1e-6)
+        #expect(abs(skipped.position(at: anchor + .seconds(14.633)) - 40.238) < 1e-6)
         m.apply(event: event(.seek(target: 72.073), epochNow + 15_423_000))
         m.apply(event: event(.otherPlaying, epochNow + 15_848_000))
         try m.apply(line: sample(72_070_000, epochNow + 16_250_000))
@@ -414,10 +415,10 @@ struct NowPlayingMergerTests {
     }
 
     // Breaks if the position runs from the seek line instead of standing at the target until the
-    // other player's Playing line: the recap's lines came 0.86 s early for 4.8 s. Trace of
-    // WhatsHerName, 23:10:59: skip to 39.081, the other player's Waiting line 0.635 s later and its
-    // Playing line at 0.639 s, Now Playing 43.016 at 4.794 s (0.22 s behind the Playing line's
-    // clock, taken).
+    // other player's Playing line plus its 0.2 s to the first frame: the recap's lines came 0.86 s
+    // early for 4.8 s. Trace of WhatsHerName, 23:10:59: skip to 39.081, the other player's Waiting
+    // line 0.635 s later and its Playing line at 0.639 s, Now Playing 43.016 at 4.794 s (0.02 s
+    // behind that clock, taken). Two more replays gave 0.19 and 0.24 s to the first frame.
     @Test func skipParksUntilTheOtherPlayerPlays() throws {
         var m = NowPlayingMerger()
         m.apply(event: event(.interstitial, epochNow - 12_633_000))
@@ -428,7 +429,9 @@ struct NowPlayingMergerTests {
         #expect(parked.position(at: anchor + .seconds(0.637)) == 39.081)
         m.apply(event: event(.otherPlaying, epochNow + 639_000))
         let moving = try #require(m.state(receivedAt: anchor + .seconds(4.794), epochMicrosNow: epochNow + 4_794_000))
-        #expect(abs(moving.position(at: anchor + .seconds(4.794)) - 43.236) < 1e-6)
+        let early = try #require(m.state(receivedAt: anchor + .seconds(0.739), epochMicrosNow: epochNow + 739_000))
+        #expect(early.position(at: anchor + .seconds(0.739)) == 39.081)
+        #expect(abs(moving.position(at: anchor + .seconds(4.794)) - 43.036) < 1e-6)
         try m.apply(line: sample(43_016_000, epochNow + 4_794_000))
         let written = try #require(m.state(receivedAt: anchor + .seconds(5.794), epochMicrosNow: epochNow + 5_794_000))
         #expect(abs(written.position(at: anchor + .seconds(5.794)) - 44.016) < 1e-6)
