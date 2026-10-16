@@ -85,7 +85,9 @@ final class AppModel {
     /// intro the downloaded video does not have.
     private func applyOffset() {
         guard let entry else { return }
-        let lead = StreamLead.seconds(nowPlaying: nowPlaying?.duration, video: entry.meta.videoDuration)
+        let lead = StreamLead.seconds(contentStart: nowPlaying?.contentStart,
+                                      contentPart: entry.meta.parts?.first { $0.kind == .content }?.start,
+                                      nowPlaying: nowPlaying?.duration, video: entry.meta.videoDuration)
         let offset = entry.meta.offset - lead
         if scheduler.offset != offset { scheduler.offset = offset }
     }

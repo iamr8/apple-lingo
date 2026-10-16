@@ -38,6 +38,10 @@ public struct NowPlayingMerger: Sendable {
     /// parked, so its clock lines wait, and Now Playing's clock (which runs through them on the
     /// subtitles' timeline) decides. The other player's own lines start and end the stalls.
     private var interstitial = false
+    /// Where the content began in Now Playing's timeline: the clamped time of the main player's
+    /// first moving clock line after an interstitial. The stream's lead over the download is this
+    /// minus the download's content start.
+    private var contentStart: Double?
 
     private struct Report: Equatable {
         var elapsed: Double, sampled: Double?, playing: Bool, rate: Double
@@ -68,6 +72,7 @@ public struct NowPlayingMerger: Sendable {
         report = nil
         clock = nil
         interstitial = false
+        contentStart = nil
         settleUntil = 0
         pausedSeek = false
         stalledSince = nil
@@ -130,10 +135,11 @@ public struct NowPlayingMerger: Sendable {
                 stalledTotal += max(0, event.epochMicros - since)
                 stalledSince = nil
             }
-        case .timebase(let rate, let time):
+        case .timebase(let rate, let time, let clamped):
             logAlive = true
             // The parked main player's clock says nothing about the recap on screen.
             if interstitial, rate == 0 { return }
+            if interstitial { contentStart = clamped }
             interstitial = false
             clock = Clock(time: time, sampled: event.epochMicros, rate: rate)
             settleUntil = 0
@@ -238,6 +244,7 @@ public struct NowPlayingMerger: Sendable {
             playing: playing,
             duration: payload["durationMicros"]?.number.map { $0 / 1e6 },
             processID: payload["processIdentifier"]?.number.map { Int32($0) },
+            contentStart: contentStart,
             anchor: start
         )
     }

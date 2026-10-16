@@ -314,6 +314,23 @@ struct AppModelTests {
         #expect(abs(model.scheduler.offset + 28.581) < 0.001)
     }
 
+    // Breaks if the clock's content start does not set the lead over the lengths (WhatsHerName:
+    // 86.61 against the download's content at 55.402 gives 31.208; the lengths give 30.548).
+    @Test func contentStartSetsTheLead() throws {
+        var entry = try library.ingest(title: "WhatsHerName", album: "Black Bird", tracks: ["en": []], sourcePackage: "p",
+                                       videoDuration: 3788.70, parts: [TitlePart(kind: .content, start: 55.402, duration: 3593.16)])
+        entry.meta.targetLanguage = "en"
+        try entry.saveMeta()
+        let model = AppModel(library: library, keychain: Keychain(service: "test.\(UUID())")) { _, _, _, _ in }
+        var state = playing("WhatsHerName", album: "Black Bird")
+        state.duration = 3819.248
+        model.update(state)
+        #expect(abs(model.scheduler.offset + 30.548) < 0.001)
+        state.contentStart = 86.61
+        model.update(state)
+        #expect(abs(model.scheduler.offset + 31.208) < 0.001)
+    }
+
     // Breaks if the nudge can move captions off the video.
     @Test func nudgeIsClamped() throws {
         var entry = try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["en": []], sourcePackage: "p")

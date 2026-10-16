@@ -260,8 +260,27 @@ struct NowPlayingMergerTests {
         #expect(abs(s.position(at: anchor + .seconds(1)) - 501.1) < 1e-6)
     }
 
-    func clock(_ rate: Double, _ time: Double, _ micros: Int64) -> PlayerEvent {
-        PlayerEvent(kind: .timebase(rate: rate, time: time), epochMicros: Double(micros))
+    func clock(_ rate: Double, _ time: Double, _ micros: Int64, clamped: Double? = nil) -> PlayerEvent {
+        PlayerEvent(kind: .timebase(rate: rate, time: time, clamped: clamped ?? time), epochMicros: Double(micros))
+    }
+
+    // Breaks if the content start is not the clamped time of the first moving clock line after
+    // Apple's intros, if a later clock line moves it, or if another title keeps it. Trace of
+    // WhatsHerName 22:33:24: clock 86.377 at rate 1, clamped 86.61, after the intro.
+    @Test func contentStartIsTheFirstMovingClockLineAfterAnInterstitial() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","contentItemIdentifier":"A","playing":true,"playbackRate":1,"elapsedTimeMicros":74000,"timestampEpochMicros":\#(epochNow)}"#))
+        m.apply(event: event(.interstitial, epochNow + 236_000))
+        m.apply(event: clock(0, 86.61, epochNow + 8_000_000))
+        #expect(try #require(m.state(receivedAt: anchor + .seconds(9), epochMicrosNow: epochNow + 9_000_000)).contentStart == nil)
+        m.apply(event: clock(1, 86.376823, epochNow + 30_094_000, clamped: 86.61))
+        m.apply(event: event(.playing, epochNow + 30_365_000))
+        #expect(try #require(m.state(receivedAt: anchor + .seconds(31), epochMicrosNow: epochNow + 31_000_000)).contentStart == 86.61)
+        m.apply(event: clock(0, 241.189166, epochNow + 60_000_000))
+        m.apply(event: clock(1, 241.092911, epochNow + 61_000_000, clamped: 241.189166))
+        #expect(try #require(m.state(receivedAt: anchor + .seconds(62), epochMicrosNow: epochNow + 62_000_000)).contentStart == 86.61)
+        try m.apply(line: line(true, #"{"contentItemIdentifier":"B","elapsedTimeMicros":0,"timestampEpochMicros":\#(epochNow + 70_000_000)}"#))
+        #expect(try #require(m.state(receivedAt: anchor + .seconds(71), epochMicrosNow: epochNow + 71_000_000)).contentStart == nil)
     }
 
     func sample(_ elapsedMicros: Int64, _ sampled: Int64) -> String {

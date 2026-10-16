@@ -10,8 +10,10 @@ public struct PlayerEvent: Sendable, Equatable {
         /// Apple's intro, recap and bumper play in another player while the main player waits;
         /// Now Playing's clock runs through them on the same timeline as the subtitles.
         case interstitial
-        /// The main player's own clock: at `time` seconds, moving at `rate`, when the line was written.
-        case timebase(rate: Double, time: Double)
+        /// The main player's own clock: at `time` seconds, moving at `rate`, when the line was
+        /// written. `clamped` is the time held inside the item: at a start the clock runs from
+        /// 0.1 to 0.2 s before the item's first frame, so `clamped` is where the frames are.
+        case timebase(rate: Double, time: Double, clamped: Double)
         /// A seek to `target` seconds of Now Playing's timeline, the Skip buttons included.
         case seek(target: Double)
         /// The other player, with Apple's intro, recap or bumper, moves.
@@ -103,13 +105,13 @@ public struct PlayerLogStream: Sendable {
         }
         if message.contains(Self.clockMarker) {
             // `<<<< FigPlayerInterstitial >>>> fpic_checkScheduledTransition_block_invoke: 0x... State
-            // logging - timebaseRate 1.000000, timebaseTime 1994.528930, ...`: the main player's clock,
-            // also while a bumper plays in the other player.
+            // logging - timebaseRate 1.000000, timebaseTime 1994.528930, timebaseTimeClamped
+            // 1994.528930, ...`: the main player's clock, also while a bumper plays in the other player.
             guard message.contains("FigPlayerInterstitial"),
-                  let match = message.firstMatch(of: /timebaseRate (\d+\.\d+), timebaseTime (\d+\.\d+)/),
-                  let rate = Double(match.1), let time = Double(match.2)
+                  let match = message.firstMatch(of: /timebaseRate (\d+\.\d+), timebaseTime (\d+\.\d+), timebaseTimeClamped (\d+\.\d+)/),
+                  let rate = Double(match.1), let time = Double(match.2), let clamped = Double(match.3)
             else { return nil }
-            return PlayerEvent(kind: .timebase(rate: rate, time: time), epochMicros: micros)
+            return PlayerEvent(kind: .timebase(rate: rate, time: time, clamped: clamped), epochMicros: micros)
         }
         if let range = message.range(of: Self.otherMarker) {
             switch message[range.upperBound...].prefix(while: \.isLetter) {

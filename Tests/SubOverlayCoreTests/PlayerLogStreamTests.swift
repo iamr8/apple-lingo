@@ -15,8 +15,8 @@ struct PlayerLogStreamTests {
     static let interstitial = "AVPlayer <private> main player timeControlStatus did change to AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate.  reasonForWaiting is AVPlayerWaitingDuringInterstitialEventReason"
 
     /// The coremedia line with the main player's clock, as the TV app logs it at every rate change.
-    static func timebase(_ rate: String, _ time: String) -> String {
-        line("<<<< FigPlayerInterstitial >>>> fpic_checkScheduledTransition_block_invoke: 0x7796d2cc00 State logging - timebaseRate \(rate), timebaseTime \(time), timebaseTimeClamped \(time), isClamped 0, ",
+    static func timebase(_ rate: String, _ time: String, clamped: String? = nil) -> String {
+        line("<<<< FigPlayerInterstitial >>>> fpic_checkScheduledTransition_block_invoke: 0x7796d2cc00 State logging - timebaseRate \(rate), timebaseTime \(time), timebaseTimeClamped \(clamped ?? time), isClamped 0, ",
              subsystem: "com.apple.coremedia", category: "")
     }
 
@@ -36,13 +36,16 @@ struct PlayerLogStreamTests {
         #expect(PlayerLogStream.parse(line: Self.seek("nan", from: "12.575")) == nil)
     }
 
-    // Breaks if the player's own clock line is not an event with its rate, time and line time, or
-    // if a rate of 0 (pause, seek landing) is lost. Trace of a resume and of a seek landing.
+    // Breaks if the player's own clock line is not an event with its rate, time, clamped time and
+    // line time, or if a rate of 0 (pause, seek landing) is lost. Trace of a resume, of a seek
+    // landing, and of a content start (the clock 0.23 s before the item's first frame).
     @Test func parsesTimebaseLines() {
         #expect(PlayerLogStream.parse(line: Self.timebase("1.000000", "1994.528930"))
-                == PlayerEvent(kind: .timebase(rate: 1, time: 1994.52893), epochMicros: 1_791_740_571_549_335))
+                == PlayerEvent(kind: .timebase(rate: 1, time: 1994.52893, clamped: 1994.52893), epochMicros: 1_791_740_571_549_335))
         #expect(PlayerLogStream.parse(line: Self.timebase("0.000000", "1700.613272"))
-                == PlayerEvent(kind: .timebase(rate: 0, time: 1700.613272), epochMicros: 1_791_740_571_549_335))
+                == PlayerEvent(kind: .timebase(rate: 0, time: 1700.613272, clamped: 1700.613272), epochMicros: 1_791_740_571_549_335))
+        #expect(PlayerLogStream.parse(line: Self.timebase("1.000000", "86.376823", clamped: "86.610000"))
+                == PlayerEvent(kind: .timebase(rate: 1, time: 86.376823, clamped: 86.61), epochMicros: 1_791_740_571_549_335))
     }
 
     // Breaks if a clock line with a broken rate or time becomes an anchor.
@@ -50,6 +53,7 @@ struct PlayerLogStreamTests {
         #expect(PlayerLogStream.parse(line: Self.timebase("nan", "1994.528930")) == nil)
         #expect(PlayerLogStream.parse(line: Self.timebase("1.000000", "inf")) == nil)
         #expect(PlayerLogStream.parse(line: Self.timebase("1.000000", "-5.000000")) == nil)
+        #expect(PlayerLogStream.parse(line: Self.timebase("1.000000", "5.000000", clamped: "nan")) == nil)
         #expect(PlayerLogStream.parse(line: Self.line("State logging - timebaseRate 1.000000, timebaseTime 5.000000, ", subsystem: "com.apple.coremedia", category: "")) == nil)
     }
 
@@ -81,7 +85,7 @@ struct PlayerLogStreamTests {
         }
         var kinds: [PlayerEvent.Kind] = []
         for await event in PlayerLogStream.events(from: outputs) { kinds.append(event.kind) }
-        #expect(kinds == [.timebase(rate: 1, time: 5), .logRestarted, .playing])
+        #expect(kinds == [.timebase(rate: 1, time: 5, clamped: 5), .logRestarted, .playing])
     }
 
     static let otherPlaying = "AVPlayer <private> interstitial player timeControlStatus did change to AVPlayerTimeControlStatusPlaying.  reasonForWaiting is (null)"

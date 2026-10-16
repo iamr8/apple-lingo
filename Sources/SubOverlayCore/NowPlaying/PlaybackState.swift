@@ -10,10 +10,14 @@ public struct PlaybackState: Sendable, Equatable {
     public var playing: Bool
     public var duration: Double?
     public var processID: Int32?
+    /// Where the content began in Now Playing's timeline, from the main player's first moving
+    /// clock line after Apple's intros; nil until then.
+    public var contentStart: Double?
     public var anchor: ContinuousClock.Instant
 
     public init(title: String, album: String?, elapsedAtAnchor: Double, rate: Double, playing: Bool,
-                duration: Double? = nil, processID: Int32? = nil, anchor: ContinuousClock.Instant) {
+                duration: Double? = nil, processID: Int32? = nil, contentStart: Double? = nil,
+                anchor: ContinuousClock.Instant) {
         self.title = title
         self.album = album
         self.elapsedAtAnchor = elapsedAtAnchor
@@ -21,6 +25,7 @@ public struct PlaybackState: Sendable, Equatable {
         self.playing = playing
         self.duration = duration
         self.processID = processID
+        self.contentStart = contentStart
         self.anchor = anchor
     }
 
