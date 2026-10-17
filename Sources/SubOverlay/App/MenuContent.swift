@@ -8,6 +8,9 @@ struct MenuContent: View {
         Text(titleLine)
         Text(statusLine)
         Divider()
+        if model.failure != nil {
+            Button("Retry Translation") { model.retryTranslation() }
+        }
         Button("Import Subtitle…") { model.showImport() }
         if model.shownLanguage != nil {
             Text("Offset: \(model.offset, format: .number.precision(.fractionLength(1)).sign(strategy: .always())) s")
@@ -26,7 +29,7 @@ struct MenuContent: View {
 
     private var statusLine: String {
         MenuText.status(adapterFailed: model.adapterFailed, translating: model.queue.running?.progress, playing: model.nowPlaying != nil,
-                        shown: model.shownLanguage, hasEntry: model.entry != nil)
+                        shown: model.shownLanguage, hasEntry: model.entry != nil, failed: model.failure != nil)
     }
 }
 
@@ -37,11 +40,13 @@ enum MenuText {
         return playing.title
     }
 
-    static func status(adapterFailed: Bool, translating: Double?, playing: Bool, shown: String?, hasEntry: Bool) -> String {
+    static func status(adapterFailed: Bool, translating: Double?, playing: Bool, shown: String?, hasEntry: Bool,
+                       failed: Bool = false) -> String {
         if adapterFailed { return "Cannot read Now Playing" }
         if let translating { return "Translating… \(Int((translating * 100).rounded()))%" }
         guard playing else { return "Idle" }
         if let shown { return "Showing \(Languages.name(shown))" }
+        if failed { return "Translation failed" }
         return hasEntry ? "No translation yet" : "No subtitles captured"
     }
 }

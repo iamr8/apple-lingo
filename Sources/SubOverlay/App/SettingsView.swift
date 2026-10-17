@@ -64,8 +64,8 @@ private struct GeneralSettings: View {
     }
 }
 
-/// Translations: the running and queued ones, each with Cancel, and the saved ones, each with
-/// Delete, so a title is translated once.
+/// Translations: the running and queued ones, each with Cancel, the failed ones with their
+/// reason and Retry, and the saved ones, each with Delete, so a title is translated once.
 private struct TranslationsSettings: View {
     struct Row: Identifiable {
         var entry: SubtitleLibrary.Entry
@@ -83,6 +83,20 @@ private struct TranslationsSettings: View {
                 Section("In progress") {
                     job(running, status: "Translating into \(Languages.name(running.target)) · \(Int((running.progress * 100).rounded()))%")
                     ForEach(model.queue.queued) { job($0, status: "Waiting · \(Languages.name($0.target))") }
+                }
+            }
+            if !model.failures.isEmpty {
+                Section("Failed") {
+                    ForEach(model.failures) { failure in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(failure.title)
+                                Text(failure.reason).font(.callout).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Retry") { model.retry(key: failure.key) }
+                        }
+                    }
                 }
             }
             Section {

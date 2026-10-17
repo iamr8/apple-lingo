@@ -14,6 +14,36 @@ final class AppModel {
     /// The language of the track on screen: the Settings target, saved or arriving in chunks.
     private(set) var shownLanguage: String?
     let queue: TranslationQueue
+    /// Translations that failed, newest last, until they are queued again.
+    private(set) var failures: [Failure] = []
+
+    struct Failure: Identifiable {
+        var key: String
+        var title: String
+        var target: String
+        var reason: String
+        var id: String { key }
+    }
+
+    /// Why the playing title's translation failed, if it did.
+    var failure: String? {
+        guard let entry else { return nil }
+        let key = Self.key(entry, languages().target)
+        return failures.first { $0.key == key }?.reason
+    }
+
+    /// Queues the playing title's failed translation again.
+    func retryTranslation() {
+        guard let entry else { return }
+        startTranslation(entry)
+    }
+
+    /// Queues a failed translation again, from the Translations tab.
+    func retry(key: String) {
+        guard let failure = failures.first(where: { $0.key == key }),
+              let entry = library.entries().first(where: { Self.key($0, failure.target) == key }) else { return }
+        startTranslation(entry)
+    }
 
     // MARK: Parts
 
@@ -238,6 +268,7 @@ final class AppModel {
     private func enqueue(_ entry: SubtitleLibrary.Entry, target: String, live: Bool,
                          make: @escaping @MainActor () throws -> TranslationJob, finish: @escaping ([Cue]) -> [Cue]) {
         let key = Self.key(entry, target)
+        failures.removeAll { $0.key == key }
         queue.enqueue(TranslationQueue.Job(key: key, title: entry.meta.title, target: target, make: make, chunk: { [weak self] cues in
             if live { self?.liveChunk(key: key, cues: cues) }
         }, done: { [weak self] result in
@@ -258,6 +289,8 @@ final class AppModel {
         do {
             try entry.save(try result.get(), language: target)
         } catch {
+            failures.removeAll { $0.key == key }
+            failures.append(Failure(key: key, title: entry.meta.title, target: target, reason: error.localizedDescription))
             notify("Translation failed", "\(entry.meta.title): \(error.localizedDescription)")
         }
         reloadEntry()

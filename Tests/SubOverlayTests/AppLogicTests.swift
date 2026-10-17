@@ -23,6 +23,7 @@ struct MenuTextTests {
         #expect(MenuText.status(adapterFailed: false, translating: nil, playing: true, shown: nil, hasEntry: false) == "No subtitles captured")
         #expect(MenuText.status(adapterFailed: false, translating: nil, playing: true, shown: nil, hasEntry: true) == "No translation yet")
         #expect(MenuText.status(adapterFailed: false, translating: nil, playing: true, shown: "fa", hasEntry: true) == "Showing Persian")
+        #expect(MenuText.status(adapterFailed: false, translating: nil, playing: true, shown: nil, hasEntry: true, failed: true) == "Translation failed")
     }
 }
 
@@ -253,6 +254,29 @@ struct AppModelTests {
         try await until { !posted.all.isEmpty }
         #expect(posted.all == ["Translation failed: Pilot: Add an API key for OpenAI in Settings."])
         #expect(model.queue.running == nil)
+    }
+
+    // Breaks if a failed translation is not kept with its reason for the playing title, cannot
+    // be retried from the menu, or stays marked failed once it runs again.
+    @Test func failedTranslationCanBeRetried() async throws {
+        try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["en": Array(Self.appleTrack.prefix(5))], sourcePackage: "p")
+        let provider = GatedProvider()
+        let keychain = Keychain(service: "test.\(UUID())")
+        let model = model(keychain: keychain, provider: provider)
+        model.update(playing("Pilot", album: "Black Bird"))
+        try await until { posted.all.count == 1 }
+        #expect(model.failure?.hasPrefix("Add an API key") == true)
+        #expect(model.failures.map(\.title) == ["Pilot"])
+        model.retryTranslation()
+        #expect(model.failure == nil)
+        try await until { posted.all.count == 2 }
+        #expect(model.failures.map(\.title) == ["Pilot"])
+        for choice in ProviderChoice.allCases { try keychain.set("key", for: choice.account) }
+        model.retryTranslation()
+        #expect(model.queue.running?.title == "Pilot")
+        provider.open()
+        try await until { model.shownLanguage == "fa" }
+        #expect(model.failures.isEmpty)
     }
 
     // Breaks if a translation that finishes writes over a setting changed while it ran (an offset).
