@@ -87,7 +87,9 @@ public actor TranslationPipeline {
         self.retryDelay = retryDelay
     }
 
-    public func translate(_ job: TranslationJob, progress: @escaping @Sendable (Double) -> Void) async throws -> [Cue] {
+    /// `chunk` gets each finished chunk's cues as it lands, as they will be in the result.
+    public func translate(_ job: TranslationJob, progress: @escaping @Sendable (Double) -> Void,
+                          chunk: @escaping @Sendable ([Cue]) -> Void = { _ in }) async throws -> [Cue] {
         try Task.checkCancellation()
         let chunks = Self.chunks(job.timing)
         let steps = Double(chunks.count + 1)
@@ -107,18 +109,23 @@ public actor TranslationPipeline {
             }
             for _ in 0..<Self.parallelChunks { addNext() }
             var done = 0
+            let timing = Dictionary(job.timing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             while let items = try await group.next() {
                 for item in items { results[item.id] = item.text }
+                chunk(items.compactMap { item in timing[item.id].map { Self.output($0, text: item.text) } })
                 done += 1
                 progress(Double(done + 1) / steps)
                 addNext()
             }
         }
-        return job.timing.map { cue in
-            var out = cue
-            out.text = results[cue.id].map(Self.balanced) ?? cue.text
-            return out
-        }
+        return job.timing.map { cue in results[cue.id].map { Self.output(cue, text: $0) } ?? cue }
+    }
+
+    /// The timing cue with its translation, balanced over two lines when long.
+    private static func output(_ cue: Cue, text: String) -> Cue {
+        var out = cue
+        out.text = balanced(text)
+        return out
     }
 
     /// Consecutive cue ranges of at most 120 cues and 6000 characters.

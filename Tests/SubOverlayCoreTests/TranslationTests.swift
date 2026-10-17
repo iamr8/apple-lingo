@@ -451,6 +451,19 @@ struct TranslationPipelineTests {
         #expect(out.first?.text == "دوج بی ۲۰۰ مدل ۷۹")
     }
 
+    // Breaks if a finished chunk's cues do not reach the caller as it lands, balanced and on the
+    // timing track's times, or the two chunks of 125 cues are not the whole output.
+    @Test func chunksAreReportedAsTheyFinish() async throws {
+        let provider = EchoProvider(transform: { id, t in id == 3 ? String(repeating: "x ", count: 30) : "T:" + t })
+        let landed = Mutex<[[Cue]]>([])
+        let out = try await TranslationPipeline(provider: provider, retryDelay: .zero)
+            .translate(job(cues(125)), progress: { _ in }, chunk: { cues in landed.withLock { $0.append(cues) } })
+        let chunks = landed.withLock { $0 }
+        #expect(Set(chunks.map { $0.map(\.id) }) == [Array(1...120), Array(121...125)])
+        #expect(chunks.flatMap { $0 }.sorted { $0.id < $1.id } == out)
+        #expect(out[2].text.contains("\n"))
+    }
+
     // Breaks if a reply that returns its input passes: Gemini gave The Place I Lie's first 120
     // cues back as their Arabic guide with Persian quotes and the other 516 as their English
     // source (2026-10-16 21:15), and every check let it through. A copy differs from its input
