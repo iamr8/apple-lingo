@@ -201,6 +201,29 @@ struct AppModelTests {
         #expect(posted.all == ["No translation for Pilot: Pilot already has Persian subtitles in the TV app."])
     }
 
+    /// A writable copy of the fixture package (Arabic and French tracks, no original language).
+    func fixturePackage() throws -> URL {
+        let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "SubOverlayCoreTests/Fixtures/Downloads-TV/Part One.tmp")
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: fixtures, to: dir.appending(path: "Part One.tmp"))
+        return dir.appending(path: "Part One.tmp/download.movpkg")
+    }
+
+    // Breaks if a package whose primary track (Arabic: the first, with no original language
+    // and no English) cannot be read is saved anyway, or the notice does not say to press
+    // Download again.
+    @Test func ingestSavesNothingWithoutThePrimaryTrack() async throws {
+        let package = try fixturePackage()
+        try FileManager.default.removeItem(at: package.appending(path: "2-AR"))
+        let model = model()
+        model.ingest(package)
+        try await until { !posted.all.isEmpty }
+        #expect(posted.all == ["Subtitles not captured: No Arabic track of Part One could be read. Press Download on it again."])
+        #expect(library.entries().isEmpty)
+    }
+
     // Breaks if a capture does not queue the translation and say so, or does not name the
     // problem that stops it.
     @Test func captureQueuesAndNotifies() throws {

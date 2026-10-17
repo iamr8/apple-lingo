@@ -157,7 +157,7 @@ final class AppModel {
 
     // MARK: Ingest
 
-    private func ingest(_ package: URL) {
+    func ingest(_ package: URL) {
         let folder = package.deletingLastPathComponent().lastPathComponent
         guard !library.hasEntry(sourcePackage: folder) else { return }
         let library = library
@@ -179,9 +179,12 @@ final class AppModel {
                         Log.ingest.error("track \(track.language, privacy: .public) skipped: \(String(describing: type(of: error)), privacy: .public)")
                     }
                 }
-                guard !tracks.isEmpty else {
+                // Without the track the planner needs, nothing is saved: the next press tries again.
+                let primary = TranslationPlan.primary(apple: manifest.tracks.map(\.language), original: manifest.originalLanguage)
+                guard let primary, tracks[primary] != nil else {
+                    let missing = primary.map { "No \(Languages.name($0)) track of \(manifest.title) could be read. Press Download on it again." }
                     await MainActor.run {
-                        self.notify("Subtitles not captured", "No subtitle track of \(manifest.title) could be read. Press Download again.")
+                        self.notify("Subtitles not captured", missing ?? TranslationPlan.Problem.noPrimary.notice(title: manifest.title))
                     }
                     return
                 }
