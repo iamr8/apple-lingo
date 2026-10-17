@@ -29,10 +29,12 @@ struct PlayerLogStreamTests {
     // Breaks if a seek line is not an event with its target. A Skip press is such a seek, and the
     // TV app wrote no Now Playing position after two of four skips (WhatsHerName, 2026-10-13).
     @Test func parsesSeekLines() {
+        #expect(PlayerLogStream.parse(line: Self.seek("184.11", from: "184.11"))
+                == PlayerEvent(kind: .seek(target: 184.11, from: 184.11), epochMicros: 1_791_740_571_549_335))
         #expect(PlayerLogStream.parse(line: Self.seek("39.081", from: "12.575"))
-                == PlayerEvent(kind: .seek(target: 39.081), epochMicros: 1_791_740_571_549_335))
+                == PlayerEvent(kind: .seek(target: 39.081, from: 12.575), epochMicros: 1_791_740_571_549_335))
         #expect(PlayerLogStream.parse(line: Self.seek("0", from: "125.65"))
-                == PlayerEvent(kind: .seek(target: 0), epochMicros: 1_791_740_571_549_335))
+                == PlayerEvent(kind: .seek(target: 0, from: 125.65), epochMicros: 1_791_740_571_549_335))
         #expect(PlayerLogStream.parse(line: Self.seek("nan", from: "12.575")) == nil)
     }
 

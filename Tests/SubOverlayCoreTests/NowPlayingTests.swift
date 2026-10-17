@@ -283,6 +283,46 @@ struct NowPlayingMergerTests {
         #expect(try #require(m.state(receivedAt: anchor + .seconds(71), epochMicrosNow: epochNow + 71_000_000)).contentStart == nil)
     }
 
+    // Breaks if a resume into the content (the TV app logs `seek 184.11 from 184.11`, then the
+    // interstitial wait, the other player's Playing line for 0.5 s and the moving clock line at
+    // 184.113; The Place I Lie, 2026-10-17 15:31) passes as a content start.
+    @Test func resumeIsNotAContentStart() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","contentItemIdentifier":"A","playing":false,"playbackRate":1,"elapsedTimeMicros":183516000,"timestampEpochMicros":\#(epochNow)}"#))
+        m.apply(event: event(.seek(target: 184.11, from: 184.11), epochNow + 222_000))
+        m.apply(event: event(.interstitial, epochNow + 228_000))
+        m.apply(event: event(.otherStopped, epochNow + 229_000))
+        m.apply(event: event(.otherPlaying, epochNow + 1_013_000))
+        m.apply(event: event(.stopped, epochNow + 1_287_000))
+        m.apply(event: clock(1, 184.018863, epochNow + 1_462_000, clamped: 184.113))
+        m.apply(event: event(.playing, epochNow + 1_496_000))
+        try m.apply(line: line(true, #"{"playing":true,"elapsedTimeMicros":184113000,"timestampEpochMicros":\#(epochNow + 1_508_000)}"#))
+        #expect(try #require(m.state(receivedAt: anchor + .seconds(2), epochMicrosNow: epochNow + 2_000_000)).contentStart == nil)
+    }
+
+    // Breaks if a seek during the intro that lands past the item boundary (seek 93 from 83.468
+    // during the intro, clock at 93.522; WhatsHerName 2026-10-16 11:37) passes as a content start,
+    // or if Skip Intro (a seek to the boundary itself) does not.
+    @Test func seekDuringTheIntroIsAContentStartOnlyAtTheBoundary() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","contentItemIdentifier":"A","playing":true,"playbackRate":1,"elapsedTimeMicros":74492000,"timestampEpochMicros":\#(epochNow)}"#))
+        m.apply(event: event(.interstitial, epochNow - 30_000_000))
+        m.apply(event: event(.otherPlaying, epochNow + 100_000))
+        m.apply(event: event(.seek(target: 93, from: 83.468), epochNow + 9_000_000))
+        m.apply(event: clock(0, 93.522067, epochNow + 9_271_000))
+        m.apply(event: clock(1, 93.425569, epochNow + 9_335_000, clamped: 93.522067))
+        m.apply(event: event(.playing, epochNow + 9_338_000))
+        #expect(try #require(m.state(receivedAt: anchor + .seconds(10), epochMicrosNow: epochNow + 10_000_000)).contentStart == nil)
+        var n = NowPlayingMerger()
+        try n.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","contentItemIdentifier":"A","playing":true,"playbackRate":1,"elapsedTimeMicros":74492000,"timestampEpochMicros":\#(epochNow)}"#))
+        n.apply(event: event(.interstitial, epochNow - 30_000_000))
+        n.apply(event: event(.otherPlaying, epochNow + 100_000))
+        n.apply(event: event(.seek(target: 86.61, from: 75.2), epochNow + 1_000_000))
+        n.apply(event: clock(1, 86.376823, epochNow + 1_400_000, clamped: 86.61))
+        n.apply(event: event(.playing, epochNow + 1_410_000))
+        #expect(try #require(n.state(receivedAt: anchor + .seconds(2), epochMicrosNow: epochNow + 2_000_000)).contentStart == 86.61)
+    }
+
     // Breaks if a later wait of the same kind moves the content start: a resume into the content
     // (The Place I Lie at 184.113, 2026-10-17 15:31) passes through the interstitial wait too.
     @Test func contentStartKeepsTheFirstTransition() throws {
@@ -423,11 +463,11 @@ struct NowPlayingMergerTests {
         var m = NowPlayingMerger()
         m.apply(event: event(.interstitial, epochNow - 173_000))
         try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","playing":true,"playbackRate":1,"elapsedTimeMicros":74000,"timestampEpochMicros":\#(epochNow)}"#))
-        m.apply(event: event(.seek(target: 39.081), epochNow + 12_633_000))
+        m.apply(event: event(.seek(target: 39.081, from: 12.575), epochNow + 12_633_000))
         m.apply(event: event(.otherPlaying, epochNow + 13_276_000))
         let skipped = try #require(m.state(receivedAt: anchor + .seconds(14.633), epochMicrosNow: epochNow + 14_633_000))
         #expect(abs(skipped.position(at: anchor + .seconds(14.633)) - 40.238) < 1e-6)
-        m.apply(event: event(.seek(target: 72.073), epochNow + 15_423_000))
+        m.apply(event: event(.seek(target: 72.073, from: 41.127), epochNow + 15_423_000))
         m.apply(event: event(.otherPlaying, epochNow + 15_848_000))
         try m.apply(line: sample(72_070_000, epochNow + 16_250_000))
         let second = try #require(m.state(receivedAt: anchor + .seconds(17.25), epochMicrosNow: epochNow + 17_250_000))
@@ -457,7 +497,7 @@ struct NowPlayingMergerTests {
         var m = NowPlayingMerger()
         m.apply(event: event(.interstitial, epochNow - 12_633_000))
         try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","playing":true,"playbackRate":1,"elapsedTimeMicros":1884000,"timestampEpochMicros":\#(epochNow - 10_742_000)}"#))
-        m.apply(event: event(.seek(target: 39.081), epochNow))
+        m.apply(event: event(.seek(target: 39.081, from: 12.575), epochNow))
         m.apply(event: event(.otherStopped, epochNow + 635_000))
         let parked = try #require(m.state(receivedAt: anchor + .seconds(0.637), epochMicrosNow: epochNow + 637_000))
         #expect(parked.position(at: anchor + .seconds(0.637)) == 39.081)
@@ -477,7 +517,7 @@ struct NowPlayingMergerTests {
         var m = NowPlayingMerger()
         try m.apply(line: report(true, 100, epochNow - 10_000_000))
         m.apply(event: clock(1, 100, epochNow - 10_000_000))
-        m.apply(event: event(.seek(target: 500), epochNow))
+        m.apply(event: event(.seek(target: 500, from: 100), epochNow))
         let parked = try #require(m.state(receivedAt: anchor + .seconds(1), epochMicrosNow: epochNow + 1_000_000))
         #expect(parked.position(at: anchor + .seconds(1)) == 500)
         m.apply(event: clock(1, 500.3, epochNow + 2_000_000))

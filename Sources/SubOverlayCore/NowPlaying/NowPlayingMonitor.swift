@@ -43,6 +43,19 @@ public struct NowPlayingMerger: Sendable {
     /// minus the download's content start. A resume into the content passes through the same
     /// wait, so the first value of a title stays.
     private var contentStart: Double?
+    /// The last seek no clock line has answered. The clock line that answers one from an
+    /// interstitial is a content start only when the seek landed on the boundary: a Skip press
+    /// seeks there exactly, a drag lands later (93 → 93.522). A resume (the seek's `from` equals
+    /// its target) lands in the content; its 0.5 s bumper plays in the other player first. Any
+    /// other seek the other player answers landed in an intro or recap, and the content start
+    /// comes later on its own.
+    private var openSeek: (target: Double, resume: Bool)?
+
+    /// The seek line prints its target to five digits; a drag lands half a second later.
+    private static func isContentStart(_ clamped: Double, after seek: (target: Double, resume: Bool)?) -> Bool {
+        guard let seek else { return true }
+        return !seek.resume && abs(clamped - seek.target) < 0.01
+    }
 
     private struct Report: Equatable {
         var elapsed: Double, sampled: Double?, playing: Bool, rate: Double
@@ -74,6 +87,7 @@ public struct NowPlayingMerger: Sendable {
         clock = nil
         interstitial = false
         contentStart = nil
+        openSeek = nil
         settleUntil = 0
         pausedSeek = false
         stalledSince = nil
@@ -140,8 +154,9 @@ public struct NowPlayingMerger: Sendable {
             logAlive = true
             // The parked main player's clock says nothing about the recap on screen.
             if interstitial, rate == 0 { return }
-            if interstitial, contentStart == nil { contentStart = clamped }
+            if interstitial, contentStart == nil, Self.isContentStart(clamped, after: openSeek) { contentStart = clamped }
             interstitial = false
+            openSeek = nil
             clock = Clock(time: time, sampled: event.epochMicros, rate: rate)
             settleUntil = 0
             stalledTotal = 0
@@ -155,10 +170,11 @@ public struct NowPlayingMerger: Sendable {
             settleUntil = 0
             stalledSince = nil
             stalledTotal = 0
-        case .seek(let target):
+        case .seek(let target, let from):
             logAlive = true
             settleUntil = 0
             stalledTotal = 0
+            openSeek = (target, from == target)
             if interstitial {
                 // Apple's intro or recap plays on from the target in the other player, and the TV
                 // app often writes no Now Playing position after a Skip press. The other player
@@ -179,6 +195,7 @@ public struct NowPlayingMerger: Sendable {
         case .otherPlaying:
             guard interstitial else { return }
             logAlive = true
+            if openSeek?.resume == false { openSeek = nil }
             if let since = stalledSince {
                 stalledTotal += max(0, event.epochMicros - since) + Self.otherStart * 1e6
                 stalledSince = nil

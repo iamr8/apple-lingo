@@ -23,12 +23,13 @@ struct StreamLeadTests {
         #expect(abs(StreamLead.seconds(contentStart: 40, contentPart: 55.402, nowPlaying: 3819.248, video: 3788.70) - 30.548) < 0.001)
     }
 
-    // Breaks if a content start that disagrees with the lengths by more than a second is taken: a
-    // resume into the content passes through the same wait as an intro (The Place I Lie resumed
-    // at 184.113 with the content part at 40.309; the lengths gave 33.6), or if one that agrees
-    // (0.3 to 0.7 s over the lengths on three titles) is not.
+    // Breaks if a content start far from the lengths' lead is taken (a resume at 184.113 on The
+    // Place I Lie, or a seek that landed 4.5 s into the content), or if one within the window
+    // is not (0.3, 0.7 and 2.55 s over the lengths on three titles).
     @Test func clockLeadMustAgreeWithTheLengths() {
         #expect(abs(StreamLead.seconds(contentStart: 184.113, contentPart: 40.309, nowPlaying: 3465.5, video: 3431.886) - 33.614) < 0.001)
+        #expect(abs(StreamLead.seconds(contentStart: 73.932, contentPart: 40.309, nowPlaying: 3462.959, video: 3431.886) - 33.623) < 0.001)
+        #expect(abs(StreamLead.seconds(contentStart: 93.522, contentPart: 55.402, nowPlaying: 3821.671, video: 3788.70) - 32.971) < 0.001)
         #expect(abs(StreamLead.seconds(contentStart: 89.025, contentPart: 55.402, nowPlaying: 3821.671, video: 3788.70) - 33.623) < 0.001)
         #expect(StreamLead.seconds(contentStart: 89.025, contentPart: 55.402, nowPlaying: nil, video: 3788.70) == 0)
     }

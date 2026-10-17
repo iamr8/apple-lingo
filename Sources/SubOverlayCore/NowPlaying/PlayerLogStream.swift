@@ -14,8 +14,9 @@ public struct PlayerEvent: Sendable, Equatable {
         /// written. `clamped` is the time held inside the item: at a start the clock runs from
         /// 0.1 to 0.2 s before the item's first frame, so `clamped` is where the frames are.
         case timebase(rate: Double, time: Double, clamped: Double)
-        /// A seek to `target` seconds of Now Playing's timeline, the Skip buttons included.
-        case seek(target: Double)
+        /// A seek to `target` seconds of Now Playing's timeline from `from`, the Skip buttons
+        /// included. An open or resume at a position logs one with `from` equal to `target`.
+        case seek(target: Double, from: Double)
         /// The other player, with Apple's intro, recap or bumper, moves.
         case otherPlaying
         /// The other player is paused or waits for data. After a Skip press its next item buffers
@@ -98,10 +99,10 @@ public struct PlayerLogStream: Sendable {
             // to target time 39.081 from 12.575, ...`: a seek in Now Playing's timeline. A Skip press
             // is one, and the TV app often writes no Now Playing position after it.
             guard message.contains("FigItemIntegratedTimeline"),
-                  let match = message.firstMatch(of: /dispatching seek to target time (\d+(?:\.\d+)?) from/),
-                  let target = Double(match.1)
+                  let match = message.firstMatch(of: /dispatching seek to target time (\d+(?:\.\d+)?) from (\d+(?:\.\d+)?)/),
+                  let target = Double(match.1), let from = Double(match.2)
             else { return nil }
-            return PlayerEvent(kind: .seek(target: target), epochMicros: micros)
+            return PlayerEvent(kind: .seek(target: target, from: from), epochMicros: micros)
         }
         if message.contains(Self.clockMarker) {
             // `<<<< FigPlayerInterstitial >>>> fpic_checkScheduledTransition_block_invoke: 0x... State
