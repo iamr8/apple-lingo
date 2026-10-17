@@ -5,9 +5,16 @@ import SubOverlayCore
 /// Non-secret settings in UserDefaults. The API key lives in the Keychain only.
 enum Preferences {
     static let defaultTargetKey = "defaultTargetLanguage"
+    static let secondaryLanguageKey = "secondaryLanguage"
     static let geminiModelKey = "geminiModel"
 
     static var defaultTarget: String { UserDefaults.standard.string(forKey: defaultTargetKey) ?? "fa" }
+
+    /// The languages every title is translated with.
+    static var languages: TranslationPlan.Settings {
+        TranslationPlan.Settings(secondary: UserDefaults.standard.string(forKey: secondaryLanguageKey) ?? TranslationPlan.Settings.automatic,
+                                 target: defaultTarget)
+    }
 }
 
 @MainActor

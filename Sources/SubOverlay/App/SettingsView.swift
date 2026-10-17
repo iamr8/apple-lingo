@@ -7,7 +7,7 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
-            Tab("General", systemImage: "gearshape") { GeneralSettings() }
+            Tab("General", systemImage: "gearshape") { GeneralSettings(model: model) }
             Tab("Providers", systemImage: "key") { ProvidersSettings(keychain: model.keychain) }
             Tab("Translations", systemImage: "text.bubble") { TranslationsSettings(model: model) }
         }
@@ -17,14 +17,28 @@ struct SettingsView: View {
 }
 
 private struct GeneralSettings: View {
+    let model: AppModel
+    @AppStorage(Preferences.secondaryLanguageKey) private var secondary = TranslationPlan.Settings.automatic
     @AppStorage(Preferences.defaultTargetKey) private var target = "fa"
 
     var body: some View {
         Form {
-            Section("Languages") {
-                Picker("Translate into", selection: $target) {
+            Section {
+                LabeledContent("Primary", value: primary)
+                Picker("Secondary", selection: $secondary) {
+                    Text("Automatic").tag(TranslationPlan.Settings.automatic)
+                    Text("Same as primary").tag(TranslationPlan.Settings.sameAsMain)
+                    Divider()
                     ForEach(Languages.all, id: \.self) { Text(Languages.name($0)).tag($0) }
                 }
+                Picker("Target", selection: $target) {
+                    ForEach(Languages.all, id: \.self) { Text(Languages.name($0)).tag($0) }
+                }
+            } header: {
+                Text("Languages")
+            } footer: {
+                Text("The primary is the movie or episode's main language. The secondary's lines give the timing of yours, and its text guides the translation; a language close to the target's grammar works best.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Section("Timing") {
                 KeyboardShortcuts.Recorder("Earlier by 0.1 s", name: .offsetMinusSmall)
@@ -38,6 +52,13 @@ private struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// The playing title's main language when one is captured.
+    private var primary: String {
+        guard let meta = model.entry?.meta, let track = TranslationPlan.primary(apple: meta.appleLanguages, original: meta.originalLanguage)
+        else { return "The title's main language" }
+        return Languages.name(track)
     }
 }
 
