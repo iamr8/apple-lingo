@@ -451,6 +451,47 @@ struct TranslationPipelineTests {
         #expect(out.first?.text == "دوج بی ۲۰۰ مدل ۷۹")
     }
 
+    // Breaks if a reply that returns its input passes: Gemini gave The Place I Lie's first 120
+    // cues back as their Arabic guide with Persian quotes and the other 516 as their English
+    // source (2026-10-16 21:15), and every check let it through. A copy differs from its input
+    // only in punctuation, spacing or case.
+    @Test func copiedChunkIsRejected() async {
+        let english = EchoProvider(transform: { _, t in t })
+        let guide = EchoProvider(transform: { id, _ in "«" + Self.arabic[id - 1].text + "»" })
+        for (provider, job) in [(english, job(cues(3))), (guide, job(Self.english, timing: Self.arabic))] {
+            do {
+                _ = try await TranslationPipeline(provider: provider, retryDelay: .zero).translate(job) { _ in }
+                Issue.record("no error")
+            } catch {
+                #expect(error.localizedDescription.contains("3 of 3 cues copy their input"))
+            }
+        }
+    }
+
+    // Breaks if one copied cue in a chunk fails it: a name or a number reads the same in both
+    // languages. Only a chunk that is mostly copies is a copied chunk.
+    @Test func aFewCopiesPass() async throws {
+        let provider = EchoProvider(transform: { id, t in id == 2 ? t : "T:" + t })
+        let out = try await TranslationPipeline(provider: provider, retryDelay: .zero).translate(job(cues(5))) { _ in }
+        #expect(out.map(\.text) == ["T:line 1", "line 2", "T:line 3", "T:line 4", "T:line 5"])
+    }
+
+    // Breaks if a cue asked for alone is rejected as a copy: alone there is no majority, and a
+    // stubborn copy would fail the title.
+    @Test func loneCueMayCopy() async throws {
+        let provider = EchoProvider()
+        let merging = EditingProvider { items in
+            if items.count > 1 { return items.filter { $0 != items[1] } }
+            guard case .object(var c) = items[0] else { return items }
+            c["text"] = .string("line 2")
+            return [.object(c)]
+        }
+        let out = try await TranslationPipeline(provider: Both(record: provider, inner: merging), retryDelay: .zero)
+            .translate(job(cues(4))) { _ in }
+        #expect(out.map(\.text) == ["T", "line 2", "T", "T"])
+        #expect(asked(provider) == [[1, 2, 3, 4], [2]])
+    }
+
     // Breaks if "invalid translation" does not say what was wrong.
     @Test func invalidReplySaysWhy() async {
         let provider = EditingProvider { Array($0.dropLast()) }

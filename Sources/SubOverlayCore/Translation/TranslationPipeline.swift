@@ -178,6 +178,17 @@ public actor TranslationPipeline {
         return nil
     }
 
+    /// The letters and digits of a text, lowercased: what a copy keeps when the model changes
+    /// quotes, spacing or case.
+    static func letters(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter {
+            switch $0.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter, .decimalNumber: true
+            default: false
+            }
+        })).lowercased()
+    }
+
     /// The first word of a line with letters or digits, without marks or punctuation, lowercased.
     static func firstWord(_ text: String) -> String {
         for word in text.split(whereSeparator: \.isWhitespace) {
@@ -248,6 +259,18 @@ public actor TranslationPipeline {
                 // Models sometimes also translate a context cue; ids outside the request are dropped.
                 let wanted = Set(ids)
                 let sources = Dictionary(input.translate.map { ($0.id, $0.text) }, uniquingKeysWith: { a, _ in a })
+                // A reply can be the input given back (Gemini returned the first 120 cues of The
+                // Place I Lie as their guide and the rest as their source, 2026-10-16). One copied
+                // cue can be a name or a number; a chunk that is mostly copies is not translated.
+                let guides = Dictionary(input.translate.compactMap { s in s.guide.map { (s.id, $0) } }, uniquingKeysWith: { a, _ in a })
+                let copies = reply.filter { item in
+                    guard wanted.contains(item.id), let source = sources[item.id] else { return false }
+                    let got = Self.letters(item.text)
+                    return !got.isEmpty && [source, guides[item.id]].contains { $0.map(Self.letters) == got }
+                }
+                if ids.count > 1, copies.count * 2 > ids.count {
+                    throw PipelineError.badReply("\(copies.count) of \(ids.count) cues copy their input")
+                }
                 let problem = { (item: Item) in
                     Self.textProblem(item) ?? Self.numberProblem(item, source: sources[item.id] ?? "") ?? drifted(item)
                 }
