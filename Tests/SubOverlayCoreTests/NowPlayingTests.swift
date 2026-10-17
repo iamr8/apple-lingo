@@ -283,6 +283,21 @@ struct NowPlayingMergerTests {
         #expect(try #require(m.state(receivedAt: anchor + .seconds(71), epochMicrosNow: epochNow + 71_000_000)).contentStart == nil)
     }
 
+    // Breaks if a later wait of the same kind moves the content start: a resume into the content
+    // (The Place I Lie at 184.113, 2026-10-17 15:31) passes through the interstitial wait too.
+    @Test func contentStartKeepsTheFirstTransition() throws {
+        var m = NowPlayingMerger()
+        try m.apply(line: line(false, #"{"bundleIdentifier":"com.apple.TV","title":"T","contentItemIdentifier":"A","playing":true,"playbackRate":1,"elapsedTimeMicros":74000,"timestampEpochMicros":\#(epochNow)}"#))
+        m.apply(event: event(.interstitial, epochNow + 236_000))
+        m.apply(event: clock(1, 86.376823, epochNow + 30_094_000, clamped: 86.61))
+        m.apply(event: event(.playing, epochNow + 30_365_000))
+        m.apply(event: event(.stopped, epochNow + 60_000_000))
+        m.apply(event: event(.interstitial, epochNow + 70_000_000))
+        m.apply(event: clock(1, 184.018863, epochNow + 71_000_000, clamped: 184.113))
+        m.apply(event: event(.playing, epochNow + 71_010_000))
+        #expect(try #require(m.state(receivedAt: anchor + .seconds(72), epochMicrosNow: epochNow + 72_000_000)).contentStart == 86.61)
+    }
+
     func sample(_ elapsedMicros: Int64, _ sampled: Int64) -> String {
         line(true, #"{"timestampEpochMicros":\#(sampled),"elapsedTimeMicros":\#(elapsedMicros)}"#)
     }

@@ -11,7 +11,8 @@ public struct PlaybackState: Sendable, Equatable {
     public var duration: Double?
     public var processID: Int32?
     /// Where the content began in Now Playing's timeline, from the main player's first moving
-    /// clock line after Apple's intros; nil until then.
+    /// clock line after an interstitial wait; nil until then. A resume into the content gives
+    /// one too, so the lead checks it against the lengths.
     public var contentStart: Double?
     public var anchor: ContinuousClock.Instant
 

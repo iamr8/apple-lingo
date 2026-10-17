@@ -40,7 +40,8 @@ public struct NowPlayingMerger: Sendable {
     private var interstitial = false
     /// Where the content began in Now Playing's timeline: the clamped time of the main player's
     /// first moving clock line after an interstitial. The stream's lead over the download is this
-    /// minus the download's content start.
+    /// minus the download's content start. A resume into the content passes through the same
+    /// wait, so the first value of a title stays.
     private var contentStart: Double?
 
     private struct Report: Equatable {
@@ -139,7 +140,7 @@ public struct NowPlayingMerger: Sendable {
             logAlive = true
             // The parked main player's clock says nothing about the recap on screen.
             if interstitial, rate == 0 { return }
-            if interstitial { contentStart = clamped }
+            if interstitial, contentStart == nil { contentStart = clamped }
             interstitial = false
             clock = Clock(time: time, sampled: event.epochMicros, rate: rate)
             settleUntil = 0
