@@ -300,7 +300,7 @@ public actor TranslationPipeline {
                 attempt += 1
                 if attempt >= Self.attempts { throw error }
                 Log.translation.error("attempt \(attempt) failed: \(Self.reason(for: error), privacy: .public)")
-                try await Task.sleep(for: retryDelay * (1 << (attempt - 1)))
+                try await Task.sleep(for: delay(after: error, attempt: attempt))
             }
         }
     }
@@ -417,9 +417,16 @@ public actor TranslationPipeline {
                 // Keep provider errors (quota, model not enabled) so the user sees the reason.
                 if attempt >= Self.attempts { throw error is DecodingError ? PipelineError.badReply("not valid JSON") : error }
                 Log.translation.error("attempt \(attempt) failed: \(Self.reason(for: error), privacy: .public)")
-                try await Task.sleep(for: retryDelay * (1 << (attempt - 1)))
+                try await Task.sleep(for: delay(after: error, attempt: attempt))
             }
         }
+    }
+
+    /// The wait before the next attempt: twice as long each time, but a minute after an HTTP 429,
+    /// since the free tier counts requests per minute. Scaled by `retryDelay`, so tests wait nothing.
+    func delay(after error: Error, attempt: Int) -> Duration {
+        if case ProviderError.http(_, 429, _) = error { return retryDelay * 60 }
+        return retryDelay * (1 << (attempt - 1))
     }
 
     /// What a failed attempt logs: a pipeline or provider error's own words (cue ids, HTTP status,

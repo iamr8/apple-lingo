@@ -527,6 +527,18 @@ struct TranslationPipelineTests {
         }
     }
 
+    // Breaks if an HTTP 429 is retried after the short backoff: Gemini's free tier counts
+    // requests per minute, so WhatsHerName failed at 83% after waits of 1, 2 and 4 s
+    // (2026-10-17 17:57). Other errors keep the short backoff.
+    @Test func rateLimitWaitsAMinute() async {
+        let pipeline = TranslationPipeline(provider: EchoProvider(), retryDelay: .seconds(1))
+        let limited = ProviderError.http(service: "Gemini", status: 429, message: nil)
+        #expect(await pipeline.delay(after: limited, attempt: 1) == .seconds(60))
+        #expect(await pipeline.delay(after: limited, attempt: 3) == .seconds(60))
+        #expect(await pipeline.delay(after: ProviderError.http(service: "Gemini", status: 503, message: nil), attempt: 2) == .seconds(2))
+        #expect(await pipeline.delay(after: TranslationPipeline.PipelineError.badReply("x"), attempt: 3) == .seconds(4))
+    }
+
     // Breaks if a retry log line hides a provider error's status and reason.
     @Test func retryReasonKeepsProviderDetail() {
         struct Odd: Error {}
