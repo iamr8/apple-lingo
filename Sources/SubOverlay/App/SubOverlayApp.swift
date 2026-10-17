@@ -36,10 +36,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         [.banner, .list]
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let info = response.notification.request.content.userInfo
-        guard let title = info[Notifier.titleKey] as? String else { return }
-        let album = info[Notifier.albumKey] as? String
-        await MainActor.run { model.showAddSubtitles(title: title, album: album) }
-    }
 }

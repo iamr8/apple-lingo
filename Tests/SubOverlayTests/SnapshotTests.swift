@@ -21,7 +21,7 @@ struct SnapshotTests {
     let library = SubtitleLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
 
     func model() -> AppModel {
-        AppModel(library: library, keychain: Keychain(service: "test.\(UUID())")) { _, _, _, _ in }
+        AppModel(library: library, keychain: Keychain(service: "test.\(UUID())"), notify: { _, _ in })
     }
 
     func host(_ view: some View, width: CGFloat) -> NSView {
@@ -46,19 +46,6 @@ struct SnapshotTests {
         ]
         video.addSubview(captions)
         assertSnapshot(of: video, as: .image)
-    }
-
-    // Breaks if the form loses a section, picker or the default choices.
-    @Test func addSubtitlesWithCapturedTracks() throws {
-        try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["ar": [], "en": [], "fr-FR": []], sourcePackage: "Pilot.tmp")
-        let view = AddSubtitlesView(model: model(), title: "Pilot", album: "Black Bird")
-        assertSnapshot(of: host(view, width: 440), as: .image)
-    }
-
-    // Breaks if a title with no captured tracks does not explain what to do.
-    @Test func addSubtitlesWithoutCapture() {
-        let view = AddSubtitlesView(model: model(), title: "Hand to Mouth", album: "Black Bird")
-        assertSnapshot(of: host(view, width: 440), as: .image)
     }
 
     // Breaks if the General settings lose a language picker or a shortcut recorder.

@@ -8,7 +8,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             Tab("General", systemImage: "gearshape") { GeneralSettings(model: model) }
-            Tab("Providers", systemImage: "key") { ProvidersSettings(keychain: model.keychain) }
+            Tab("Providers", systemImage: "key") { ProvidersSettings(model: model) }
             Tab("Translations", systemImage: "text.bubble") { TranslationsSettings(model: model) }
         }
         .frame(width: 480)
@@ -52,6 +52,8 @@ private struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+        .onChange(of: secondary) { model.settingsChanged() }
+        .onChange(of: target) { model.settingsChanged() }
     }
 
     /// The playing title's main language when one is captured.
@@ -120,7 +122,7 @@ private struct TranslationsSettings: View {
 }
 
 private struct ProvidersSettings: View {
-    let keychain: Keychain
+    let model: AppModel
     @AppStorage(ProviderChoice.selectedKey) private var selected = ProviderChoice.gemini.rawValue
 
     var body: some View {
@@ -130,24 +132,28 @@ private struct ProvidersSettings: View {
                     ForEach(ProviderChoice.allCases) { Text($0.title).tag($0.rawValue) }
                 }
             }
-            ForEach(ProviderChoice.allCases) { ProviderKeySection(choice: $0, keychain: keychain) }
+            ForEach(ProviderChoice.allCases) { ProviderKeySection(choice: $0, keychain: model.keychain, changed: model.settingsChanged) }
         }
         .formStyle(.grouped)
+        .onChange(of: selected) { model.settingsChanged() }
     }
 }
 
 private struct ProviderKeySection: View {
     let choice: ProviderChoice
     let keychain: Keychain
+    /// Called when the saved key or the model changes.
+    let changed: () -> Void
     @AppStorage private var model: String
     @State private var key = ""
     @State private var models: [String] = []
     @State private var message: String?
     @State private var busy = false
 
-    init(choice: ProviderChoice, keychain: Keychain) {
+    init(choice: ProviderChoice, keychain: Keychain, changed: @escaping () -> Void) {
         self.choice = choice
         self.keychain = keychain
+        self.changed = changed
         _model = AppStorage(wrappedValue: "", choice.modelKey)
     }
 
@@ -170,6 +176,7 @@ private struct ProviderKeySection: View {
             key = (try? keychain.get(choice.account)) ?? ""
             loadModels()
         }
+        .onChange(of: model) { changed() }
     }
 
     /// Lists the saved key's models; this does not use generation quota.
@@ -200,6 +207,7 @@ private struct ProviderKeySection: View {
                 try keychain.set(key, for: choice.account)
                 models = result.models
                 message = "Verified with \(result.model). Key saved."
+                changed()
             } catch {
                 message = error.localizedDescription
             }

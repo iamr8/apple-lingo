@@ -12,7 +12,8 @@ final class CueScheduler {
     private var observers: [NSObjectProtocol] = []
 
     private var state: PlaybackState?
-    private var timeline: CueTimeline?
+    private(set) var timeline: CueTimeline?
+    var rightToLeft: Bool { view.rightToLeft }
     private var videoFrame: CGRect?
     var offset = 0.0 { didSet { render() } }
     var nudge: Double {

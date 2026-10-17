@@ -386,11 +386,11 @@ struct SubtitleLibraryTests {
         try lib.ingest(title: "T", album: "A", tracks: ["en": []], sourcePackage: "p.tmp")
         var entry = try #require(lib.entry(album: "A", title: "T"))
         entry.meta.offset = 0.3
-        entry.meta.targetLanguage = "fa"
+        entry.meta.nudge = -4
         try entry.saveMeta()
         let again = try #require(lib.entry(album: "A", title: "T"))
         #expect(again.meta.offset == 0.3)
-        #expect(again.meta.targetLanguage == "fa")
+        #expect(again.meta.nudge == -4)
     }
 
     // Breaks if saved translations are not listed per title, or Apple tracks are listed as translations.
@@ -405,19 +405,16 @@ struct SubtitleLibraryTests {
         #expect(entries[1].translations == ["fa"])
     }
 
-    // Breaks if deleting a translation leaves its file, keeps it as the shown track, or can delete an Apple track.
+    // Breaks if deleting a translation leaves its file, or can delete an Apple track.
     @Test func deletesTranslationOnly() throws {
         let lib = library()
-        var entry = try lib.ingest(title: "T", album: "A", tracks: ["en": []], sourcePackage: "p.tmp")
+        let entry = try lib.ingest(title: "T", album: "A", tracks: ["en": []], sourcePackage: "p.tmp")
         try entry.save([], language: "fa")
-        entry.meta.targetLanguage = "fa"
-        try entry.saveMeta()
         #expect(throws: SubtitleLibrary.LibraryError.self) { try entry.deleteTranslation("en") }
         try entry.deleteTranslation("fa")
         let again = try #require(lib.entry(album: "A", title: "T"))
         #expect(!again.hasTrack("fa"))
         #expect(again.hasTrack("en"))
-        #expect(again.meta.targetLanguage == nil)
     }
 
     // Breaks if a language code can name a path outside the entry.

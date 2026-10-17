@@ -14,10 +14,6 @@ public struct TitleMeta: Codable, Sendable, Equatable {
     public var title: String
     public var album: String
     public var appleLanguages: [String]
-    public var baseLanguage: String?
-    /// Apple track whose cues the translation follows. "" is automatic.
-    public var timingLanguage: String?
-    public var targetLanguage: String?
     /// The film's original audio language, from the package.
     public var originalLanguage: String?
     /// Seconds of the downloaded video, its intro included; measures a stream's lead.
@@ -71,14 +67,10 @@ public struct SubtitleLibrary: Sendable {
         }
 
         /// Removes a saved translation. Apple tracks cannot be removed.
-        public mutating func deleteTranslation(_ language: String) throws {
+        public func deleteTranslation(_ language: String) throws {
             guard !meta.appleLanguages.contains(language) else { throw LibraryError.notTranslation(language) }
             let url = try file(language)
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-            if meta.targetLanguage == language {
-                meta.targetLanguage = nil
-                try saveMeta()
-            }
         }
 
         public func saveMeta() throws {

@@ -8,8 +8,7 @@ struct MenuContent: View {
         Text(titleLine)
         Text(statusLine)
         Divider()
-        Button("Add Subtitles…") { model.showAddSubtitles() }
-        if model.entry?.meta.targetLanguage != nil {
+        if model.shownLanguage != nil {
             Text("Offset: \(model.offset, format: .number.precision(.fractionLength(1)).sign(strategy: .always())) s")
             if model.offset != 0 {
                 Button("Reset Offset") { model.resetOffset() }
@@ -25,8 +24,8 @@ struct MenuContent: View {
     private var titleLine: String { MenuText.title(model.nowPlaying) }
 
     private var statusLine: String {
-        MenuText.status(adapterFailed: model.adapterFailed, translation: model.translation, playing: model.nowPlaying != nil,
-                        meta: model.entry?.meta, hasEntry: model.entry != nil)
+        MenuText.status(adapterFailed: model.adapterFailed, translating: model.queue.running?.progress, playing: model.nowPlaying != nil,
+                        shown: model.shownLanguage, hasEntry: model.entry != nil)
     }
 }
 
@@ -37,14 +36,11 @@ enum MenuText {
         return playing.title
     }
 
-    static func status(adapterFailed: Bool, translation: AppModel.TranslationStatus?, playing: Bool,
-                       meta: TitleMeta?, hasEntry: Bool) -> String {
+    static func status(adapterFailed: Bool, translating: Double?, playing: Bool, shown: String?, hasEntry: Bool) -> String {
         if adapterFailed { return "Cannot read Now Playing" }
-        if let t = translation {
-            return t.error == nil ? "Translating… \(Int((t.progress * 100).rounded()))%" : "Translation failed"
-        }
+        if let translating { return "Translating… \(Int((translating * 100).rounded()))%" }
         guard playing else { return "Idle" }
-        if let target = meta?.targetLanguage { return "Showing \(Languages.name(target))" }
+        if let shown { return "Showing \(Languages.name(shown))" }
         return hasEntry ? "No translation yet" : "No subtitles captured"
     }
 }

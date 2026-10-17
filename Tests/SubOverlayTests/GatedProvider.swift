@@ -26,3 +26,29 @@ final class GatedProvider: TranslationProvider {
         return try JSONEncoder().encode(SubOverlayCore.JSONValue.object(["items": .array(out)]))
     }
 }
+
+/// Answers the style sheet and the first chunk at once; a chunk with a cue past `lastAnswered`
+/// waits until cancelled, so the translation stays running with one chunk landed.
+final class HalfProvider: TranslationProvider {
+    let lastAnswered: Int
+
+    init(lastAnswered: Int) {
+        self.lastAnswered = lastAnswered
+    }
+
+    func complete(system: String, user: String, schema: GenerationSchema) async throws -> Data {
+        let input = try JSONDecoder().decode(SubOverlayCore.JSONValue.self, from: Data(user.utf8))
+        guard case .object(let o) = input, case .array(let items)? = o["translate"] else {
+            return Data(#"{"register":"spoken"}"#.utf8)
+        }
+        let out: [SubOverlayCore.JSONValue] = items.map { item in
+            guard case .object(let c) = item, let id = c["id"]?.number, let text = c["text"]?.string else { return .null }
+            return .object(["cue": .number(id), "source_word": .string(String(text.split(separator: " ").first ?? "")),
+                            "text": .string("T:" + text)])
+        }
+        if out.contains(where: { if case .object(let c) = $0, let id = c["cue"]?.number { Int(id) > lastAnswered } else { false } }) {
+            while true { try await Task.sleep(for: .milliseconds(5)) }
+        }
+        return try JSONEncoder().encode(SubOverlayCore.JSONValue.object(["items": .array(out)]))
+    }
+}

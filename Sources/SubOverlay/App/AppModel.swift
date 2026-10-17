@@ -11,38 +11,48 @@ final class AppModel {
     private(set) var nowPlaying: PlaybackState?
     private(set) var entry: SubtitleLibrary.Entry?
     private(set) var adapterFailed = false
-    private(set) var translation: TranslationStatus?
-
-    struct TranslationStatus {
-        var title: String
-        var progress: Double
-        var error: String?
-    }
+    /// The language of the track on screen: the Settings target, saved or arriving in chunks.
+    private(set) var shownLanguage: String?
+    let queue: TranslationQueue
 
     // MARK: Parts
 
     @ObservationIgnored let library: SubtitleLibrary
     @ObservationIgnored let keychain: Keychain
-    @ObservationIgnored private let notify: (_ heading: String, _ body: String, _ title: String, _ album: String?) -> Void
-    @ObservationIgnored private let makeProvider: MakeProvider
+    @ObservationIgnored private let notify: (_ heading: String, _ body: String) -> Void
+    @ObservationIgnored private let languages: () -> TranslationPlan.Settings
     @ObservationIgnored let scheduler = CueScheduler()
     @ObservationIgnored private var watcher: DownloadWatcher?
     @ObservationIgnored private var monitorTask: Task<Void, Never>?
-    @ObservationIgnored private var translationTask: Task<Void, Never>?
-    @ObservationIgnored private var translationJob: UUID?
-    @ObservationIgnored private var notifiedMissing = Set<String>()
-    @ObservationIgnored private lazy var addWindow = AddSubtitlesWindow(model: self)
+    /// Notices given this run, by title and reason.
+    @ObservationIgnored private var noticed = Set<String>()
+    /// Finished chunks of the running full translation, by cue id.
+    @ObservationIgnored private var live: (key: String, cues: [Int: Cue])?
+
+    typealias MakeProvider = @Sendable (_ choice: ProviderChoice, _ key: String, _ model: String) async throws -> TranslationProvider
 
     init(library: SubtitleLibrary = SubtitleLibrary(), keychain: Keychain = Keychain(),
-         notify: @escaping (_ heading: String, _ body: String, _ title: String, _ album: String?) -> Void = Notifier.post,
+         languages: @escaping () -> TranslationPlan.Settings = { Preferences.languages },
+         notify: @escaping (_ heading: String, _ body: String) -> Void = Notifier.post,
          makeProvider: @escaping MakeProvider = { try await $0.provider(key: $1, model: $2) }) {
         self.library = library
         self.keychain = keychain
-        self.makeProvider = makeProvider
+        self.languages = languages
         self.notify = notify
+        queue = TranslationQueue(translate: Self.translate(keychain: keychain, makeProvider: makeProvider))
     }
 
-    typealias MakeProvider = @Sendable (_ choice: ProviderChoice, _ key: String, _ model: String) async throws -> TranslationProvider
+    /// A translation with the provider, model and key chosen in Settings when the job starts.
+    private static func translate(keychain: Keychain, makeProvider: @escaping MakeProvider) -> TranslationQueue.Translate {
+        { job, progress, chunk in
+            let choice = ProviderChoice.selected
+            guard let key = try keychain.get(choice.account), !key.isEmpty else {
+                throw AppError("Add an API key for \(choice.title) in Settings.")
+            }
+            let provider = try await makeProvider(choice, key, choice.model)
+            return try await TranslationPipeline(provider: provider).translate(job, progress: progress, chunk: chunk)
+        }
+    }
 
     func start() {
         Notifier.requestAuthorization()
@@ -67,7 +77,6 @@ final class AppModel {
 
     func stop() {
         monitorTask?.cancel()
-        translationTask?.cancel()
         watcher?.stop()
     }
 
@@ -76,9 +85,18 @@ final class AppModel {
     func update(_ state: PlaybackState?) {
         let changed = state?.title != nowPlaying?.title || state?.album != nowPlaying?.album
         nowPlaying = state
-        if changed { reloadEntry() }
+        if changed {
+            reloadEntry()
+            evaluate()
+        }
         applyOffset()
         scheduler.update(state: state)
+    }
+
+    /// Languages, provider, model or key changed: the playing title is shown and looked at again.
+    func settingsChanged() {
+        reloadEntry()
+        evaluate()
     }
 
     /// The user's offset minus the stream's lead: a streamed title's Now Playing time counts an
@@ -92,26 +110,48 @@ final class AppModel {
         if scheduler.offset != offset { scheduler.offset = offset }
     }
 
+    /// Shows the playing title's translation into the Settings target: the saved one, else the
+    /// finished chunks of its running translation. A track Apple ships is the TV app's to show.
     private func reloadEntry() {
+        shownLanguage = nil
         guard let state = nowPlaying else {
             entry = nil
             scheduler.setTimeline(nil, rightToLeft: false)
             return
         }
         entry = library.entry(album: state.album, title: state.title)
-        guard let entry, let target = entry.meta.targetLanguage, entry.hasTrack(target),
-              let cues = try? entry.cues(language: target)
-        else {
+        let target = languages().target
+        guard let entry else { return scheduler.setTimeline(nil, rightToLeft: false) }
+        if !entry.meta.appleLanguages.contains(target), entry.hasTrack(target), let cues = try? entry.cues(language: target) {
+            show(cues, language: target)
+        } else if let live, live.key == Self.key(entry, target) {
+            show(Array(live.cues.values), language: target)
+        } else {
             scheduler.setTimeline(nil, rightToLeft: false)
-            let key = "\(state.album ?? "")|\(state.title)"
-            if notifiedMissing.insert(key).inserted {
-                notify("No subtitles for \(state.title)", "Click to add subtitles.", state.title, state.album)
-            }
+        }
+    }
+
+    private func show(_ cues: [Cue], language: String) {
+        shownLanguage = language
+        applyOffset()
+        scheduler.nudge = entry?.meta.nudge ?? 0
+        scheduler.setTimeline(CueTimeline(cues), rightToLeft: Languages.isRightToLeft(language))
+    }
+
+    /// The play trigger: a captured title with no track in the target gets its translation; a
+    /// title that is not captured, or one the planner stops, gets one notice per reason.
+    private func evaluate() {
+        guard let state = nowPlaying else { return }
+        guard let entry else {
+            notice(state.title, reason: "capture", "No subtitles for \(state.title)", "Press Download on it in the TV app, then cancel.")
             return
         }
-        applyOffset()
-        scheduler.nudge = entry.meta.nudge
-        scheduler.setTimeline(CueTimeline(cues), rightToLeft: Languages.isRightToLeft(target))
+        guard shownLanguage == nil, let problem = startTranslation(entry) else { return }
+        notice(entry.meta.title, reason: "\(problem)", "No translation for \(entry.meta.title)", problem.notice(title: entry.meta.title))
+    }
+
+    private func notice(_ title: String, reason: String, _ heading: String, _ body: String) {
+        if noticed.insert("\(title)|\(reason)").inserted { notify(heading, body) }
     }
 
     // MARK: Ingest
@@ -140,140 +180,89 @@ final class AppModel {
                 }
                 guard !tracks.isEmpty else {
                     await MainActor.run {
-                        self.notify("Subtitles not captured", "No subtitle track of \(manifest.title) could be read. Press Download again.",
-                                    manifest.title, manifest.album)
+                        self.notify("Subtitles not captured", "No subtitle track of \(manifest.title) could be read. Press Download again.")
                     }
                     return
                 }
                 // Any track tells where people speak; the original language's is the fullest.
                 let dialogue = tracks[manifest.originalLanguage ?? ""] ?? tracks.values.max { $0.count < $1.count } ?? []
-                try library.ingest(title: manifest.title, album: manifest.album, tracks: tracks, sourcePackage: folder,
-                                   originalLanguage: manifest.originalLanguage, videoDuration: manifest.videoDuration,
-                                   parts: MoviePackageReader.parts(manifest, package: package, dialogue: dialogue))
-                await MainActor.run {
-                    self.notify("Subtitles captured", "\(manifest.title): you can cancel the download now.",
-                                manifest.title, manifest.album)
-                    self.reloadEntry()
-                }
+                let entry = try library.ingest(title: manifest.title, album: manifest.album, tracks: tracks, sourcePackage: folder,
+                                               originalLanguage: manifest.originalLanguage, videoDuration: manifest.videoDuration,
+                                               parts: MoviePackageReader.parts(manifest, package: package, dialogue: dialogue))
+                await MainActor.run { self.captured(entry) }
             } catch {
                 Log.ingest.error("ingest failed: \(String(describing: type(of: error)))")
             }
         }
     }
 
-    // MARK: Add Subtitles
-
-    func showAddSubtitles(title: String? = nil, album: String? = nil) {
-        let title = title ?? nowPlaying?.title
-        let album = title == nil ? nil : (album ?? nowPlaying?.album)
-        addWindow.show(title: title, album: album?.isEmpty == true ? nil : album)
-    }
-
-    func entry(title: String, album: String?) -> SubtitleLibrary.Entry? {
-        library.entry(album: album, title: title)
-    }
-
-    /// `timing` is the picker's value; "" is automatic.
-    func translate(_ entry: SubtitleLibrary.Entry, base: String, timing: String, target: String) {
-        let timingTrack = AddSubtitlesDefaults.timing(timing, apple: entry.meta.appleLanguages, base: base, target: target)
-        run(entry, target: target) {
-            TranslationJob(
-                source: try entry.cues(language: base), sourceLanguage: base,
-                timing: try entry.cues(language: timingTrack), timingLanguage: timingTrack, targetLanguage: target)
-        } finish: { cues, meta in
-            meta.baseLanguage = base
-            meta.timingLanguage = timing
-            return cues
-        }
-    }
-
-    /// Runs a translation with the provider chosen in Settings, with progress and errors in
-    /// `translation`, then saves `finish`'s cues as the `target` track and shows them.
-    private func run(_ entry: SubtitleLibrary.Entry, target: String, job makeJob: @escaping () throws -> TranslationJob,
-                     finish: @escaping ([Cue], inout TitleMeta) -> [Cue]) {
-        cancelTranslation()
-        let jobID = UUID()
-        translationJob = jobID
-        translation = TranslationStatus(title: entry.meta.title, progress: 0)
-        let keychain = keychain
-        let choice = ProviderChoice.selected
-        let model = choice.model
-        translationTask = Task {
-            do {
-                guard let key = try keychain.get(choice.account), !key.isEmpty else {
-                    throw AppError("Add an API key for \(choice.title) in Settings.")
-                }
-                let provider = try await makeProvider(choice, key, model)
-                let job = try makeJob()
-                let cues = try await TranslationPipeline(provider: provider).translate(job) { progress in
-                    Task { @MainActor in
-                        if self.translationJob == jobID { self.translation?.progress = progress }
-                    }
-                }
-                guard translationJob == jobID else { return }
-                // Settings may have changed while it ran (an offset); change only what it owns.
-                var updated = library.entry(album: entry.meta.album, title: entry.meta.title) ?? entry
-                let output = finish(cues, &updated.meta)
-                try entry.save(output, language: target)
-                updated.meta.targetLanguage = target
-                try updated.saveMeta()
-                translation = nil
-                translationJob = nil
-                reloadEntry()
-            } catch is CancellationError {
-                return
-            } catch {
-                guard translationJob == jobID else { return }
-                translation?.error = error.localizedDescription
-            }
-        }
-    }
-
-    enum BackingImport: Equatable {
-        case saved(lines: Int)
-        /// Few lines land on the title's speech; `percent` of them do. Save only if the user agrees.
-        case lowMatch(percent: Int, cues: [Cue])
-    }
-
-    /// Reads a human translation and moves it onto `timingTrack`'s clock.
-    /// Below this share of lines on the title's speech, the file is likely another episode or cut.
-    static let backingMinMatch = 0.8
-
-    /// Reads a human translation and moves it onto `timingTrack`'s clock.
-    func importBacking(_ entry: SubtitleLibrary.Entry, data: Data, base: String, timingTrack: String, target: String) throws -> BackingImport {
-        let cues = try SubtitleFile.parse(data, language: target)
-        let aligned = SubtitleAligner.align(cues, to: try entry.cues(language: timingTrack))
-        guard aligned.confidence >= Self.backingMinMatch else {
-            return .lowMatch(percent: Int((aligned.confidence * 100).rounded()), cues: aligned.cues)
-        }
-        return .saved(lines: try saveBacking(entry, cues: aligned.cues, base: base, timingTrack: timingTrack, target: target))
-    }
-
-    /// Saves aligned backing cues, without release ads, as the title's `target` track and shows
-    /// them. Then translates the timing track's dialogue the backing lacks and adds it.
-    @discardableResult
-    func saveBacking(_ entry: SubtitleLibrary.Entry, cues: [Cue], base: String, timingTrack: String, target: String) throws -> Int {
-        cancelTranslation()
-        let timing = try entry.cues(language: timingTrack)
-        let backing = SubtitleBacking.clean(cues, timing: timing)
-        try entry.save(backing, language: target)
-        var updated = library.entry(album: entry.meta.album, title: entry.meta.title) ?? entry
-        updated.meta.targetLanguage = target
-        try updated.saveMeta()
+    /// After a capture: the title's translation is queued, and the notice says so or names
+    /// the problem that stops it.
+    func captured(_ entry: SubtitleLibrary.Entry) {
+        let title = entry.meta.title
+        let body = startTranslation(entry)?.notice(title: title)
+            ?? "\(title): you can cancel the download now. Translating into \(Languages.name(languages().target))."
+        notify("Subtitles captured", body)
         reloadEntry()
-        if let job = SubtitleBacking.gapJob(backing: backing, source: try entry.cues(language: base), sourceLanguage: base,
-                                            timing: timing, timingLanguage: timingTrack, targetLanguage: target) {
-            run(updated, target: target) { job } finish: { fill, _ in SubtitleBacking.merge(backing, fill) }
-        }
-        return backing.count
     }
 
-    /// Keeps the form's languages for the title before any translation succeeds. "" is automatic timing.
-    func saveChoices(_ entry: SubtitleLibrary.Entry, base: String, timing: String) {
-        guard var fresh = library.entry(album: entry.meta.album, title: entry.meta.title) else { return }
-        fresh.meta.baseLanguage = base
-        fresh.meta.timingLanguage = timing
-        do { try fresh.saveMeta() } catch { Log.translation.error("save choices failed") }
+    // MARK: Translation
+
+    /// Plans the title's translation from the Settings languages and queues it. Returns the
+    /// problem that stops it, if any.
+    @discardableResult
+    func startTranslation(_ entry: SubtitleLibrary.Entry) -> TranslationPlan.Problem? {
+        switch plan(entry) {
+        case .failure(let problem): return problem
+        case .success(let plan):
+            enqueue(entry, target: plan.target, live: true, make: { try entry.job(plan) }) { $0 }
+            return nil
+        }
+    }
+
+    private func plan(_ entry: SubtitleLibrary.Entry) -> Result<TranslationPlan, TranslationPlan.Problem> {
+        TranslationPlan.make(apple: entry.meta.appleLanguages, original: entry.meta.originalLanguage, settings: languages())
+    }
+
+    /// The queue key of a title's translation into `target`.
+    static func key(_ entry: SubtitleLibrary.Entry, _ target: String) -> String {
+        entry.directory.path + "|" + target
+    }
+
+    /// Queues a translation of the title into `target`. A live one shows its chunks while the
+    /// title plays; `finish` makes the track to save from the translated cues.
+    private func enqueue(_ entry: SubtitleLibrary.Entry, target: String, live: Bool,
+                         make: @escaping @MainActor () throws -> TranslationJob, finish: @escaping ([Cue]) -> [Cue]) {
+        let key = Self.key(entry, target)
+        queue.enqueue(TranslationQueue.Job(key: key, title: entry.meta.title, target: target, make: make, chunk: { [weak self] cues in
+            if live { self?.liveChunk(key: key, cues: cues) }
+        }, done: { [weak self] result in
+            self?.finished(key: key, entry: entry, target: target, result: result.map(finish))
+        }))
+    }
+
+    /// Keeps a finished chunk of the running translation and shows it when its title plays.
+    func liveChunk(key: String, cues: [Cue]) {
+        if live?.key != key { live = (key, [:]) }
+        for cue in cues { live?.cues[cue.id] = cue }
+        guard let entry, Self.key(entry, languages().target) == key else { return }
+        reloadEntry()
+    }
+
+    private func finished(key: String, entry: SubtitleLibrary.Entry, target: String, result: Result<[Cue], Error>) {
+        if live?.key == key { live = nil }
+        do {
+            try entry.save(try result.get(), language: target)
+        } catch {
+            notify("Translation failed", "\(entry.meta.title): \(error.localizedDescription)")
+        }
+        reloadEntry()
+    }
+
+    func cancelTranslation(key: String) {
+        queue.cancel(key: key)
+        if live?.key == key { live = nil }
+        reloadEntry()
     }
 
     /// Every title with at least one saved translation.
@@ -281,21 +270,56 @@ final class AppModel {
         library.entries().filter { !$0.translations.isEmpty }
     }
 
+    /// Removes the saved track. Nothing is queued; the next play of the title is.
     func deleteTranslation(_ entry: SubtitleLibrary.Entry, language: String) {
-        guard var fresh = library.entry(album: entry.meta.album, title: entry.meta.title) else { return }
-        do { try fresh.deleteTranslation(language) } catch { Log.translation.error("delete translation failed") }
+        do { try entry.deleteTranslation(language) } catch { Log.translation.error("delete translation failed") }
         reloadEntry()
     }
 
-    func cancelTranslation() {
-        translationTask?.cancel()
-        translationTask = nil
-        translationJob = nil
-        translation = nil
+    // MARK: Import
+
+    enum BackingImport: Equatable {
+        case saved(lines: Int)
+        /// Few lines land on the title's speech; `percent` of them do. Save only if the user agrees.
+        case lowMatch(percent: Int, cues: [Cue])
     }
 
-    func dismissTranslationError() {
-        translation = nil
+    /// Below this share of lines on the title's speech, the file is likely another episode or cut.
+    static let backingMinMatch = 0.8
+
+    /// Reads a human translation and moves it onto the planner's timing track.
+    func importBacking(_ entry: SubtitleLibrary.Entry, data: Data) throws -> BackingImport {
+        let plan = try importPlan(entry)
+        let cues = try SubtitleFile.parse(data, language: plan.target)
+        let aligned = SubtitleAligner.align(cues, to: try entry.cues(language: plan.timing))
+        guard aligned.confidence >= Self.backingMinMatch else {
+            return .lowMatch(percent: Int((aligned.confidence * 100).rounded()), cues: aligned.cues)
+        }
+        return .saved(lines: try saveBacking(entry, cues: aligned.cues))
+    }
+
+    /// Saves aligned backing cues, without release ads, as the title's target track and shows
+    /// them. A translation of the title is cancelled; the dialogue the backing lacks is queued.
+    @discardableResult
+    func saveBacking(_ entry: SubtitleLibrary.Entry, cues: [Cue]) throws -> Int {
+        let plan = try importPlan(entry)
+        cancelTranslation(key: Self.key(entry, plan.target))
+        let timing = try entry.cues(language: plan.timing)
+        let backing = SubtitleBacking.clean(cues, timing: timing)
+        try entry.save(backing, language: plan.target)
+        reloadEntry()
+        if let job = SubtitleBacking.gapJob(backing: backing, source: try entry.cues(language: plan.base), sourceLanguage: plan.base,
+                                            timing: timing, timingLanguage: plan.timing, targetLanguage: plan.target) {
+            enqueue(entry, target: plan.target, live: false, make: { job }) { SubtitleBacking.merge(backing, $0) }
+        }
+        return backing.count
+    }
+
+    private func importPlan(_ entry: SubtitleLibrary.Entry) throws -> TranslationPlan {
+        switch plan(entry) {
+        case .success(let plan): plan
+        case .failure(let problem): throw AppError(problem.notice(title: entry.meta.title))
+        }
     }
 
     // MARK: Hotkeys
@@ -323,6 +347,14 @@ final class AppModel {
         self.entry = entry
         applyOffset()
         scheduler.nudge = entry.meta.nudge
+    }
+}
+
+extension SubtitleLibrary.Entry {
+    /// The title's tracks in the plan's languages.
+    func job(_ plan: TranslationPlan) throws -> TranslationJob {
+        TranslationJob(source: try cues(language: plan.base), sourceLanguage: plan.base,
+                       timing: try cues(language: plan.timing), timingLanguage: plan.timing, targetLanguage: plan.target)
     }
 }
 
