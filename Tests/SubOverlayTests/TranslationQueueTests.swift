@@ -50,24 +50,26 @@ struct TranslationQueueTests {
                                     })
     }
 
-    func settle() async throws { try await Task.sleep(for: .milliseconds(30)) }
+    /// Waits up to 2 s for `condition`.
+    func until(_ condition: @MainActor () -> Bool) async throws {
+        for _ in 0..<1000 where !condition() { try await Task.sleep(for: .milliseconds(2)) }
+        #expect(condition())
+    }
 
     // Breaks if two jobs run at once, out of order, or a finished job does not start the next.
     @Test func runsInOrderOneAtATime() async throws {
         let queue = TranslationQueue(translate: gate.translate)
         #expect(queue.enqueue(job("fa")))
         #expect(queue.enqueue(job("ku")))
-        try await settle()
-        #expect(gate.started.withLock { $0 } == ["fa"])
+        try await until { gate.started.withLock { $0 } == ["fa"] }
         #expect(queue.running?.target == "fa")
         #expect(queue.queued.map(\.target) == ["ku"])
         gate.open("fa")
-        try await settle()
+        try await until { events.all.count == 2 }
         #expect(events.all == ["chunk fa", "done fa 1"])
-        #expect(gate.started.withLock { $0 } == ["fa", "ku"])
+        try await until { gate.started.withLock { $0 } == ["fa", "ku"] }
         gate.open("ku")
-        try await settle()
-        #expect(queue.running == nil)
+        try await until { queue.running == nil }
         #expect(queue.queued.isEmpty)
     }
 
@@ -87,14 +89,14 @@ struct TranslationQueueTests {
         let queue = TranslationQueue(translate: gate.translate)
         _ = queue.enqueue(job("fa"))
         _ = queue.enqueue(job("ku"))
-        try await settle()
+        try await until { gate.started.withLock { $0 } == ["fa"] }
         queue.cancel(key: "t|fa")
         gate.open("fa")
         gate.open("ku")
-        try await settle()
+        try await until { events.all.count == 2 }
         #expect(events.all == ["chunk ku", "done ku 1"])
         #expect(queue.enqueue(job("fa")))
-        try await settle()
+        try await until { events.all.count == 4 }
         #expect(events.all.suffix(2) == ["chunk fa", "done fa 1"])
     }
 
@@ -106,7 +108,7 @@ struct TranslationQueueTests {
         queue.cancel(key: "t|ku")
         #expect(queue.queued.isEmpty)
         gate.open("fa")
-        try await settle()
+        try await until { queue.running == nil }
         #expect(gate.started.withLock { $0 } == ["fa"])
     }
 
@@ -118,7 +120,7 @@ struct TranslationQueueTests {
         _ = queue.enqueue(job("ku"))
         gate.open("fa")
         gate.open("ku")
-        try await settle()
+        try await until { events.all.count == 3 }
         #expect(events.all == ["failed fa Quota exceeded", "chunk ku", "done ku 1"])
         #expect(queue.running == nil)
     }
@@ -130,8 +132,7 @@ struct TranslationQueueTests {
             while true { try await Task.sleep(for: .milliseconds(5)) }
         })
         _ = queue.enqueue(job("fa"))
-        try await settle()
-        #expect(queue.running?.progress == 0.25)
+        try await until { queue.running?.progress == 0.25 }
         queue.cancel(key: "t|fa")
     }
 }
