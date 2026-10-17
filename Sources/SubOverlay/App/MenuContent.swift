@@ -8,6 +8,7 @@ struct MenuContent: View {
         Text(titleLine)
         Text(statusLine)
         Divider()
+        Button("Import Subtitle…") { model.showImport() }
         if model.shownLanguage != nil {
             Text("Offset: \(model.offset, format: .number.precision(.fractionLength(1)).sign(strategy: .always())) s")
             if model.offset != 0 {

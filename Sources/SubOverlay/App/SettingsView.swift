@@ -64,7 +64,8 @@ private struct GeneralSettings: View {
     }
 }
 
-/// Saved translations, so a title is translated once. Each can be deleted.
+/// Translations: the running and queued ones, each with Cancel, and the saved ones, each with
+/// Delete, so a title is translated once.
 private struct TranslationsSettings: View {
     struct Row: Identifiable {
         var entry: SubtitleLibrary.Entry
@@ -78,6 +79,12 @@ private struct TranslationsSettings: View {
 
     var body: some View {
         Form {
+            if let running = model.queue.running {
+                Section("In progress") {
+                    job(running, status: "Translating into \(Languages.name(running.target)) · \(Int((running.progress * 100).rounded()))%")
+                    ForEach(model.queue.queued) { job($0, status: "Waiting · \(Languages.name($0.target))") }
+                }
+            }
             Section {
                 if rows.isEmpty {
                     Text("No translations yet.").foregroundStyle(.secondary)
@@ -107,6 +114,20 @@ private struct TranslationsSettings: View {
             }
         } message: { row in
             Text("\(row.entry.meta.title) will need a new translation to show \(Languages.name(row.language)) subtitles.")
+        }
+    }
+
+    private func job(_ job: TranslationQueue.Job, status: String) -> some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(job.title)
+                Text(status).font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Cancel") {
+                model.cancelTranslation(key: job.key)
+                reload()
+            }
         }
     }
 

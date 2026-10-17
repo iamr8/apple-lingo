@@ -28,6 +28,7 @@ final class AppModel {
     @ObservationIgnored private var noticed = Set<String>()
     /// Finished chunks of the running full translation, by cue id.
     @ObservationIgnored private var live: (key: String, cues: [Int: Cue])?
+    @ObservationIgnored private lazy var importWindow = ImportSubtitleWindow(model: self)
 
     typealias MakeProvider = @Sendable (_ choice: ProviderChoice, _ key: String, _ model: String) async throws -> TranslationProvider
 
@@ -277,6 +278,10 @@ final class AppModel {
     }
 
     // MARK: Import
+
+    func showImport() {
+        importWindow.show()
+    }
 
     enum BackingImport: Equatable {
         case saved(lines: Int)

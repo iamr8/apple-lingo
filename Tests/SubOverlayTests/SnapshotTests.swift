@@ -48,6 +48,15 @@ struct SnapshotTests {
         assertSnapshot(of: video, as: .image)
     }
 
+    // Breaks if the import form loses its buttons or what it tells about the file.
+    @Test func importSubtitle() throws {
+        try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["ar": [], "en": []], sourcePackage: "Pilot.tmp")
+        let model = model()
+        model.update(PlaybackState(title: "Pilot", album: "Black Bird", elapsedAtAnchor: 0, rate: 1, playing: false, anchor: .now))
+        model.cancelTranslation(key: model.queue.running?.key ?? "")
+        assertSnapshot(of: host(ImportSubtitleView(model: model), width: 440), as: .image)
+    }
+
     // Breaks if the General settings lose a language picker or a shortcut recorder.
     @Test func settingsGeneral() {
         assertSnapshot(of: host(SettingsView(model: model()), width: 480), as: .image)
