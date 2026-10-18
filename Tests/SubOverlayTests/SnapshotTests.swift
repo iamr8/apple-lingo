@@ -18,6 +18,12 @@ struct SnapshotTests {
         window: RGBA(r: 0, g: 0, b: 0, a: 1), windowOpacity: 0.5, windowCornerRadius: 8,
         edgeStyle: 1))
 
+    /// The reference images are 2x. A 1x screen (the CI runner) renders other pixels and row heights.
+    nonisolated static let retina: Bool = {
+        guard let mode = CGDisplayCopyDisplayMode(CGMainDisplayID()) else { return false }
+        return mode.pixelWidth > mode.width
+    }()
+
     let library = SubtitleLibrary(root: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
 
     func model() -> AppModel {
@@ -32,7 +38,7 @@ struct SnapshotTests {
     }
 
     // Breaks if RTL text, italics, Apple's cue position, the window box or stacking render wrong.
-    @Test func captionView() {
+    @Test(.enabled(if: retina)) func captionView() {
         let video = NSView(frame: CGRect(x: 0, y: 0, width: 1280, height: 720))
         video.wantsLayer = true
         video.layer?.backgroundColor = NSColor(white: 0.35, alpha: 1).cgColor
@@ -49,7 +55,7 @@ struct SnapshotTests {
     }
 
     // Breaks if the import form loses its buttons or what it tells about the file.
-    @Test func importSubtitle() throws {
+    @Test(.enabled(if: retina)) func importSubtitle() throws {
         try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["ar": [], "en": []], sourcePackage: "Pilot.tmp")
         let model = model()
         model.update(PlaybackState(title: "Pilot", album: "Black Bird", elapsedAtAnchor: 0, rate: 1, playing: false, anchor: .now))
@@ -58,7 +64,7 @@ struct SnapshotTests {
     }
 
     // Breaks if the General settings lose a language picker or a shortcut recorder.
-    @Test func settingsGeneral() {
+    @Test(.enabled(if: retina)) func settingsGeneral() {
         assertSnapshot(of: host(SettingsView(model: model()), width: 480), as: .image)
     }
 
