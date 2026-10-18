@@ -1,4 +1,4 @@
-# SubOverlay
+# AppleLingo
 
 macOS menu bar app, Swift 6 and SwiftPM. It shows a translated subtitle track over the TV app.
 

@@ -1,12 +1,12 @@
-# SubOverlay
+# AppleLingo
 
 **Subtitles in your language for the Apple TV app on Mac.**
 
-[![CI](https://github.com/iamr8/AppleTV.CustomSub/actions/workflows/ci.yml/badge.svg)](https://github.com/iamr8/AppleTV.CustomSub/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/iamr8/AppleTV.CustomSub)](https://github.com/iamr8/AppleTV.CustomSub/releases/latest)
+[![CI](https://github.com/iamr8/apple-lingo/actions/workflows/ci.yml/badge.svg)](https://github.com/iamr8/apple-lingo/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/iamr8/apple-lingo)](https://github.com/iamr8/apple-lingo/releases/latest)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE.md)
 
-The Apple TV app has subtitles in only some languages. SubOverlay adds the missing ones. It translates Apple's own subtitles into your language and shows them over the video. They look just like Apple's subtitles and stay in time with the video.
+The Apple TV app has subtitles in only some languages. AppleLingo adds the missing ones. It translates Apple's own subtitles into your language and shows them over the video. They look just like Apple's subtitles and stay in time with the video.
 
 <!-- TODO: add a screenshot of a scene with translated subtitles -->
 
@@ -29,28 +29,28 @@ The Apple TV app has subtitles in only some languages. SubOverlay adds the missi
 
 ## Install
 
-1. Download the newest `SubOverlay-….zip` from the [Releases page](https://github.com/iamr8/AppleTV.CustomSub/releases/latest).
+1. Download the newest `AppleLingo-….zip` from the [Releases page](https://github.com/iamr8/apple-lingo/releases/latest).
 2. Double-click the zip to unzip it.
-3. Drag **SubOverlay** into your **Applications** folder.
-4. Open SubOverlay.
+3. Drag **AppleLingo** into your **Applications** folder.
+4. Open AppleLingo.
 
 ### The first time you open it
 
 The app is not notarized by Apple, so macOS blocks it the first time. Right-click → **Open** no longer works on macOS 15. Do this instead:
 
-1. Open SubOverlay. A warning says Apple cannot check it. Click **Done**.
+1. Open AppleLingo. A warning says Apple cannot check it. Click **Done**.
 2. Open **System Settings** → **Privacy & Security**.
-3. Scroll down to **Security**. Next to "SubOverlay was blocked", click **Open Anyway**.
+3. Scroll down to **Security**. Next to "AppleLingo was blocked", click **Open Anyway**.
 4. Enter your Mac password, then click **Open Anyway** again.
 
-You do this only once. After that, SubOverlay opens like any other app.
+You do this only once. After that, AppleLingo opens like any other app.
 
 > [!NOTE]
-> When SubOverlay asks to send notifications, click **Allow**. It uses them to tell you when subtitles are ready or need your help.
+> When AppleLingo asks to send notifications, click **Allow**. It uses them to tell you when subtitles are ready or need your help.
 
 ## Set up
 
-SubOverlay lives in the menu bar. Look for the speech-bubble icon at the top of your screen. Click it and choose **Settings…**.
+AppleLingo lives in the menu bar. Look for the speech-bubble icon at the top of your screen. Click it and choose **Settings…**.
 
 1. **Providers** tab: choose Gemini or OpenAI. Paste your API key and click **Authenticate**.
 2. **General** tab, under **Languages**:
@@ -60,11 +60,11 @@ SubOverlay lives in the menu bar. Look for the speech-bubble icon at the top of 
 ## Use it
 
 1. In the TV app, find a movie or episode.
-2. Press **Download** on it, then cancel the download. SubOverlay saves Apple's subtitles in that moment.
-3. SubOverlay translates them. A notification tells you when they are ready.
+2. Press **Download** on it, then cancel the download. AppleLingo saves Apple's subtitles in that moment.
+3. AppleLingo translates them. A notification tells you when they are ready.
 4. Play the title. Your subtitles show over the video.
 
-If the title already has subtitles in your language, SubOverlay tells you and does nothing.
+If the title already has subtitles in your language, AppleLingo tells you and does nothing.
 
 ### Menu bar options
 
@@ -81,7 +81,7 @@ If subtitles show too early or too late, set keyboard shortcuts in **Settings �
 
 ### Change the look
 
-SubOverlay uses your Mac's subtitle style. To change it, open **System Settings → Accessibility → Captions**.
+AppleLingo uses your Mac's subtitle style. To change it, open **System Settings → Accessibility → Captions**.
 
 ## Questions
 

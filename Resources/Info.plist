@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>local.SubOverlay</string>
+	<string>local.AppleLingo</string>
 	<key>CFBundleName</key>
-	<string>SubOverlay</string>
+	<string>AppleLingo</string>
 	<key>CFBundleDisplayName</key>
-	<string>SubOverlay</string>
+	<string>AppleLingo</string>
 	<key>CFBundleExecutable</key>
-	<string>SubOverlay</string>
+	<string>AppleLingo</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

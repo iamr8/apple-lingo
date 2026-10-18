@@ -1,4 +1,4 @@
-# SubOverlay build. `make app` assembles build/SubOverlay.app.
+# AppleLingo build. `make app` assembles build/AppleLingo.app.
 
 ADAPTER_REPO   := https://github.com/ungive/mediaremote-adapter
 ADAPTER_COMMIT := e3ff5021eb0875858bd05f48d2e9ba2e962d1cf6  # v0.7.7
@@ -9,8 +9,8 @@ TEST_CLIENT    := $(ADAPTER_OUT)/MediaRemoteAdapterTestClient
 ARCH           := arm64
 MIN_OS         := 15.0
 
-APP      := build/SubOverlay.app
-BIN      := .build/release/SubOverlay
+APP      := build/AppleLingo.app
+BIN      := .build/release/AppleLingo
 # A real identity keeps macOS privacy grants across builds; ad hoc ("-") asks again each build.
 SIGN_ID  ?= $(or $(shell security find-identity -v -p codesigning | awk '/"Developer ID Application/ {print $$2; exit}'),$(shell security find-identity -v -p codesigning | awk '/"Apple Development/ {print $$2; exit}'),-)
 
@@ -53,7 +53,7 @@ test:
 app: deps build
 	rm -rf $(APP)
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Frameworks $(APP)/Contents/Helpers $(APP)/Contents/Resources
-	cp $(BIN) $(APP)/Contents/MacOS/SubOverlay
+	cp $(BIN) $(APP)/Contents/MacOS/AppleLingo
 	cp Resources/Info.plist $(APP)/Contents/Info.plist
 	cp -R .build/release/KeyboardShortcuts_KeyboardShortcuts.bundle $(APP)/Contents/Resources/
 	cp -R $(FRAMEWORK) $(APP)/Contents/Frameworks/

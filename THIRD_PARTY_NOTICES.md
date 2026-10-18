@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-SubOverlay includes the software below. Each part keeps its own license.
+AppleLingo includes the software below. Each part keeps its own license.
 
 ## mediaremote-adapter v0.7.7
 
