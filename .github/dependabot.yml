@@ -1,0 +1,14 @@
+version: 2
+# The submodule is left out: the Makefile pins ADAPTER_COMMIT, so a submodule bump alone changes nothing.
+updates:
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

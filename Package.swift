@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "SubOverlay",
+    name: "AppleLingo",
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "3.1.0"),
@@ -11,21 +11,21 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "SubOverlayCore",
+            name: "AppleLingoCore",
             dependencies: [.product(name: "AnyLanguageModel", package: "AnyLanguageModel")]
         ),
         .executableTarget(
-            name: "SubOverlay",
-            dependencies: ["SubOverlayCore", "KeyboardShortcuts"]
+            name: "AppleLingo",
+            dependencies: ["AppleLingoCore", "KeyboardShortcuts"]
         ),
         .testTarget(
-            name: "SubOverlayCoreTests",
-            dependencies: ["SubOverlayCore", .product(name: "AnyLanguageModel", package: "AnyLanguageModel")],
+            name: "AppleLingoCoreTests",
+            dependencies: ["AppleLingoCore", .product(name: "AnyLanguageModel", package: "AnyLanguageModel")],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(
-            name: "SubOverlayTests",
-            dependencies: ["SubOverlay", "SubOverlayCore", .product(name: "SnapshotTesting", package: "swift-snapshot-testing")],
+            name: "AppleLingoTests",
+            dependencies: ["AppleLingo", "AppleLingoCore", .product(name: "SnapshotTesting", package: "swift-snapshot-testing")],
             exclude: ["__Snapshots__"]
         ),
     ],

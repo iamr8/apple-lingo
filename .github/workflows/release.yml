@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+
+jobs:
+  release:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Set version from tag
+        run: |
+          plutil -replace CFBundleShortVersionString -string "${GITHUB_REF_NAME#v}" Resources/Info.plist
+          plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" Resources/Info.plist
+
+      - name: Build adapter
+        run: make deps
+
+      - name: Test
+        run: swift test
+
+      # No Developer ID yet: ad hoc signed, not notarized.
+      - name: Build app (ad hoc signed)
+        run: make app SIGN_ID=-
+
+      - name: Package
+        run: |
+          zip="AppleLingo-${GITHUB_REF_NAME}.zip"
+          ditto -c -k --keepParent build/AppleLingo.app "$zip"
+          shasum -a 256 "$zip" > "$zip.sha256"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "AppleLingo-${GITHUB_REF_NAME}.zip" "AppleLingo-${GITHUB_REF_NAME}.zip.sha256" \
+            --verify-tag --generate-notes \
+            --notes "Not notarized. On first open, macOS blocks the app. Close the warning, then go to System Settings > Privacy & Security and click Open Anyway."

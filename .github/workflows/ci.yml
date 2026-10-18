@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+
+jobs:
+  build-test:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build adapter
+        run: make deps
+
+      - name: Test
+        run: swift test
+        env:
+          SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshots
+
+      - name: Upload failed snapshots
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: failed-snapshots
+          path: ${{ runner.temp }}/snapshots
+          retention-days: 7
+
+      - name: Build app (ad hoc signed)
+        run: make app SIGN_ID=-
+
+      - name: Verify app
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/AppleLingo.app
+          plutil -lint build/AppleLingo.app/Contents/Info.plist
+          lipo -archs build/AppleLingo.app/Contents/MacOS/AppleLingo
+
+      # ditto keeps the framework symlinks that the signature covers.
+      - name: Package app
+        run: ditto -c -k --keepParent build/AppleLingo.app AppleLingo.zip
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AppleLingo-${{ github.sha }}
+          path: AppleLingo.zip
+          retention-days: 14

@@ -1,0 +1,62 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # GitHub does not read Package.resolved by itself. This feeds the dependency graph,
+  # which Dependabot alerts and the dependency review below both use.
+  swift-dependencies:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: vapor-community/swift-dependency-submission@b3073f8c070033ab550b2e02d90d9ff1e426f123 # v0.2.0
+        with:
+          commit: ${{ github.event.pull_request.head.sha || github.sha }}
+          branch: ${{ github.event_name == 'pull_request' && format('refs/heads/{0}', github.head_ref) || github.ref }}
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    needs: swift-dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: low
+          # Permissive licenses only: they fit this project's noncommercial license.
+          allow-licenses: MIT, Apache-2.0, Apache-2.0 WITH Swift-exception, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Zlib
+          retry-on-snapshot-warnings: true
+          comment-summary-in-pr: on-failure
+
+  # Swift is left out: CodeQL supports Swift up to 6.3, and the project builds with 6.4.
+  codeql-actions:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: actions
+          build-mode: none
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
