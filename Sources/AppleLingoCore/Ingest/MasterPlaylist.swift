@@ -22,6 +22,9 @@ struct MasterPlaylist {
     var subtitles: [String: Subtitle] = [:]
     /// Absolute URLs of the video variants (`#EXT-X-STREAM-INF`).
     var videos: Set<String> = []
+    /// Width over height of the largest video variant's `RESOLUTION`.
+    var videoAspect: Double?
+    private var largestVariant = 0
 
     /// Reads every `Playlist-<id>-master.m3u8` with its `Playlist-master.m3u8-<id>.descriptor`,
     /// which holds the URL that relative rendition URIs resolve against.
@@ -50,6 +53,12 @@ struct MasterPlaylist {
             }
             if line.hasPrefix("#EXT-X-STREAM-INF:") {
                 variantNext = true
+                if let size = Self.attributes(line.dropFirst("#EXT-X-STREAM-INF:".count))["RESOLUTION"]?
+                       .wholeMatch(of: /(\d{1,5})x(\d{1,5})/),
+                   let w = Int(size.1), let h = Int(size.2), h > 0, w * h > largestVariant {
+                    largestVariant = w * h
+                    videoAspect = Double(w) / Double(h)
+                }
             } else if line.hasPrefix("#EXT-X-SESSION-DATA:") {
                 let a = Self.attributes(line.dropFirst("#EXT-X-SESSION-DATA:".count))
                 switch a["DATA-ID"] {

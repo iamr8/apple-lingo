@@ -110,6 +110,19 @@ struct VideoGeometryTests {
         #expect(letter == CGRect(x: 0, y: 50, width: 1600, height: 900))
     }
 
+    // Breaks if a known picture aspect (Black Bird, 2:1) is not fit inside the player: in full
+    // screen on a 16:9 screen, and in a 16:9 player window, captions then sit lower and larger
+    // than Apple's. Values from a real setup. Without one, the window rule stays.
+    @Test func titleAspectFitsInsidePlayer() {
+        let fullScreen = CGRect(x: 89, y: -1080, width: 1920, height: 1080)
+        #expect(VideoGeometry.videoRect(window: fullScreen, fullScreen: true, lastAspect: 16.0 / 9, titleAspect: 2)
+            == CGRect(x: 89, y: -1020, width: 1920, height: 960))
+        let windowed = CGRect(x: 132, y: -1050, width: 1867, height: 1050)
+        #expect(VideoGeometry.videoRect(window: windowed, fullScreen: false, lastAspect: 16.0 / 9, titleAspect: 2)
+            == CGRect(x: 132, y: -1050 + 58.25, width: 1867, height: 933.5))
+        #expect(VideoGeometry.videoRect(window: windowed, fullScreen: false, lastAspect: 2, titleAspect: nil) == windowed)
+    }
+
     // Breaks if the y axis flip uses the window height instead of the primary screen height.
     @Test func cgToCocoaFlip() {
         let r = VideoGeometry.cocoaRect(fromCG: CGRect(x: 10, y: 100, width: 50, height: 200), primaryHeight: 1080)

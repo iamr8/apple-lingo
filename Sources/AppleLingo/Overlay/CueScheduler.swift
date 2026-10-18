@@ -15,6 +15,8 @@ final class CueScheduler {
     private(set) var timeline: CueTimeline?
     var rightToLeft: Bool { view.rightToLeft }
     private var videoFrame: CGRect?
+    /// The shown title's picture aspect, when its package gave one.
+    var videoAspect: Double? { didSet { if videoAspect != oldValue { refreshFrame() } } }
     var offset = 0.0 { didSet { render() } }
     var nudge: Double {
         get { view.nudge }
@@ -45,7 +47,7 @@ final class CueScheduler {
 
     private func refreshFrame() {
         if let pid = state?.processID ?? tvProcessID() {
-            videoFrame = WindowTracker.videoFrame(pid: pid)
+            videoFrame = WindowTracker.videoFrame(pid: pid, titleAspect: videoAspect)
         } else {
             videoFrame = nil
         }
@@ -90,7 +92,7 @@ final class CueScheduler {
         timer.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, let pid = self.state?.processID ?? self.tvProcessID() else { return }
-                let frame = WindowTracker.videoFrame(pid: pid)
+                let frame = WindowTracker.videoFrame(pid: pid, titleAspect: self.videoAspect)
                 if frame != self.videoFrame {
                     self.videoFrame = frame
                     self.render()

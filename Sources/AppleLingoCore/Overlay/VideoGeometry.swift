@@ -38,10 +38,13 @@ public enum VideoGeometry {
         return candidates.max { $0.number < $1.number }.map { PickedWindow(bounds: $0.bounds, fullScreen: isFullScreen($0.bounds)) }
     }
 
-    /// A windowed player has the video's own aspect, so the video is the window. In full screen
-    /// the video is fit inside the window with the aspect last seen windowed.
-    public static func videoRect(window: CGRect, fullScreen: Bool, lastAspect: CGFloat) -> CGRect {
-        fullScreen ? videoRect(in: window, aspect: lastAspect) : window
+    /// With the title's picture aspect known, the video is fit inside the player window, which
+    /// can have another shape (a 16:9 window or screen around a 2:1 picture). Without it, a
+    /// windowed player is taken to have the video's own aspect, so the video is the window, and
+    /// in full screen the video is fit with the aspect last seen windowed.
+    public static func videoRect(window: CGRect, fullScreen: Bool, lastAspect: CGFloat, titleAspect: CGFloat? = nil) -> CGRect {
+        if let titleAspect, titleAspect > 0 { return videoRect(in: window, aspect: titleAspect) }
+        return fullScreen ? videoRect(in: window, aspect: lastAspect) : window
     }
 
     /// The 16:9 video area, aspect-fit and centered inside `rect`.

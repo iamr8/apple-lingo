@@ -20,6 +20,8 @@ public struct PackageManifest: Sendable, Equatable {
     public var videoDuration: Double?
     /// Package-relative folder of the video stream.
     public var videoPath: String?
+    /// Width over height of the picture.
+    public var videoAspect: Double? = nil
 
     public var allComplete: Bool { !tracks.isEmpty && tracks.allSatisfy(\.complete) }
 }
@@ -87,7 +89,7 @@ public enum MoviePackageReader {
             names = Names(title: title, album: "")
         }
         return PackageManifest(title: names.title, album: names.album, tracks: tracks, originalLanguage: master.originalLanguage, videoDuration: videoDuration,
-                               videoPath: video?.path)
+                               videoPath: video?.path, videoAspect: master.videoAspect)
     }
 
     /// Cues of one track, in time order, deduped across fragment overlaps, in Now Playing time.
