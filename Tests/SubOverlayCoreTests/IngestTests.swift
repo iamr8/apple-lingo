@@ -13,7 +13,10 @@ enum Fixture {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let target = dir.appending(path: folder)
         try FileManager.default.copyItem(at: downloads.appending(path: folder), to: target)
-        return target.appending(path: "download.movpkg")
+        // boot.xml names this stream folder; git keeps no empty folder, so a clone lacks it.
+        let package = target.appending(path: "download.movpkg")
+        try FileManager.default.createDirectory(at: package.appending(path: "0-VIDEO"), withIntermediateDirectories: true)
+        return package
     }
 }
 
