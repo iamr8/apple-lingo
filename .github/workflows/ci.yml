@@ -35,15 +35,6 @@ jobs:
       - name: Build adapter
         run: make deps
 
-      - name: Adapter self-test (debug)
-        continue-on-error: true
-        run: |
-          set -x
-          perl Vendor/mediaremote-adapter/bin/mediaremote-adapter.pl "$PWD/build/adapter/MediaRemoteAdapter.framework" "$PWD/build/adapter/MediaRemoteAdapterTestClient" test; echo "exit $?"
-          timeout 5 perl Vendor/mediaremote-adapter/bin/mediaremote-adapter.pl "$PWD/build/adapter/MediaRemoteAdapter.framework" get; echo "exit $?"
-          launchctl print "gui/$(id -u)" 2>&1 | grep -i -m3 mediaremote || true
-          pgrep -l mediaremoted || echo "no mediaremoted"
-
       - name: Test
         run: swift test
         env:
