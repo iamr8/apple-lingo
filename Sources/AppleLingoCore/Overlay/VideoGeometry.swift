@@ -24,25 +24,27 @@ public enum VideoGeometry {
         public var fullScreen: Bool
     }
 
-    /// The TV app's video window: a full-screen window if there is one, else the newest window
-    /// (`windows` is front to back, as CG lists them; equal numbers keep the front one). The TV
-    /// app opens its player after the library window, which can be larger, on another screen,
-    /// and in front after a click on it. Layer 0 only, so the PiP window is ignored; strips and
-    /// popovers below 320x180 are too. A full-screen window spans a screen's width down to its
-    /// bottom; on a display with a notch it starts below the menu bar area.
+    /// The TV app's video window: the newest window (`windows` is front to back, as CG lists
+    /// them; equal numbers keep the front one). The TV app opens its player after the library
+    /// window, which can be larger, maximized, on another screen, and in front after a click on
+    /// it. A full-screen player keeps its window. Layer 0 only, so the PiP window is ignored;
+    /// strips and popovers below 320x180 are too. A full-screen window spans a screen's width
+    /// down to its bottom; on a display with a notch it starts below the menu bar area.
     public static func pickVideoWindow(_ windows: [WindowInfo], pid: Int32, screens: [CGRect]) -> PickedWindow? {
         let candidates = windows.filter { $0.pid == pid && $0.layer == 0 && $0.bounds.width >= 320 && $0.bounds.height >= 180 }
         func isFullScreen(_ r: CGRect) -> Bool {
             screens.contains { s in r.minX == s.minX && r.width == s.width && r.maxY == s.maxY && r.height >= s.height - 80 }
         }
-        if let full = candidates.first(where: { isFullScreen($0.bounds) }) { return PickedWindow(bounds: full.bounds, fullScreen: true) }
-        return candidates.max { $0.number < $1.number }.map { PickedWindow(bounds: $0.bounds, fullScreen: false) }
+        return candidates.max { $0.number < $1.number }.map { PickedWindow(bounds: $0.bounds, fullScreen: isFullScreen($0.bounds)) }
     }
 
-    /// A windowed player has the video's own aspect, so the video is the window. In full screen
-    /// the video is fit inside the window with the aspect last seen windowed.
-    public static func videoRect(window: CGRect, fullScreen: Bool, lastAspect: CGFloat) -> CGRect {
-        fullScreen ? videoRect(in: window, aspect: lastAspect) : window
+    /// With the title's picture aspect known, the video is fit inside the player window, which
+    /// can have another shape (a 16:9 window or screen around a 2:1 picture). Without it, a
+    /// windowed player is taken to have the video's own aspect, so the video is the window, and
+    /// in full screen the video is fit with the aspect last seen windowed.
+    public static func videoRect(window: CGRect, fullScreen: Bool, lastAspect: CGFloat, titleAspect: CGFloat? = nil) -> CGRect {
+        if let titleAspect, titleAspect > 0 { return videoRect(in: window, aspect: titleAspect) }
+        return fullScreen ? videoRect(in: window, aspect: lastAspect) : window
     }
 
     /// The 16:9 video area, aspect-fit and centered inside `rect`.

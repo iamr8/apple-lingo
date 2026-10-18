@@ -77,14 +77,29 @@ struct VideoGeometryTests {
         #expect(VideoGeometry.pickVideoWindow(windows, pid: 7, screens: [builtIn, external]) == .init(bounds: player, fullScreen: false))
     }
 
-    // Breaks if a full-screen window does not win over a larger area rule.
+    // Breaks if the full-screen player is not picked, or not marked full screen, while the
+    // library window shows on another screen.
     @Test func fullScreenWindowWins() {
         let other = CGRect(x: 1920, y: 0, width: 2560, height: 1440)
         let windows = [
-            WindowInfo(pid: 7, layer: 0, bounds: CGRect(x: 1920, y: 30, width: 2500, height: 1400)),
-            WindowInfo(pid: 7, layer: 0, bounds: screen),
+            WindowInfo(pid: 7, layer: 0, bounds: CGRect(x: 1920, y: 30, width: 2500, height: 1400), number: 10),
+            WindowInfo(pid: 7, layer: 0, bounds: screen, number: 20),
         ]
         #expect(VideoGeometry.pickVideoWindow(windows, pid: 7, screens: [screen, other]) == .init(bounds: screen, fullScreen: true))
+    }
+
+    // Breaks if the maximized library window passes as a full-screen player and wins over the
+    // windowed player: captions then sit lower and larger than Apple's. Values from a real setup
+    // (library 1635 maximized under the menu bar, player 1727 in front of it).
+    @Test func maximizedLibraryIsNotFullScreen() {
+        let builtIn = CGRect(x: 0, y: 0, width: 2056, height: 1329)
+        let external = CGRect(x: 89, y: -1080, width: 1920, height: 1080)
+        let player = CGRect(x: 132, y: -1010, width: 1867, height: 934)
+        let windows = [
+            WindowInfo(pid: 7, layer: 0, bounds: player, number: 1727),
+            WindowInfo(pid: 7, layer: 0, bounds: CGRect(x: 89, y: -1050, width: 1920, height: 1050), number: 1635),
+        ]
+        #expect(VideoGeometry.pickVideoWindow(windows, pid: 7, screens: [builtIn, external]) == .init(bounds: player, fullScreen: false))
     }
 
     // Breaks if the aspect fit letterboxes on the wrong axis.
@@ -93,6 +108,19 @@ struct VideoGeometryTests {
         #expect(pillar == CGRect(x: 200, y: 0, width: 1600, height: 900))
         let letter = VideoGeometry.videoRect(in: CGRect(x: 0, y: 0, width: 1600, height: 1000))
         #expect(letter == CGRect(x: 0, y: 50, width: 1600, height: 900))
+    }
+
+    // Breaks if a known picture aspect (Black Bird, 2:1) is not fit inside the player: in full
+    // screen on a 16:9 screen, and in a 16:9 player window, captions then sit lower and larger
+    // than Apple's. Values from a real setup. Without one, the window rule stays.
+    @Test func titleAspectFitsInsidePlayer() {
+        let fullScreen = CGRect(x: 89, y: -1080, width: 1920, height: 1080)
+        #expect(VideoGeometry.videoRect(window: fullScreen, fullScreen: true, lastAspect: 16.0 / 9, titleAspect: 2)
+            == CGRect(x: 89, y: -1020, width: 1920, height: 960))
+        let windowed = CGRect(x: 132, y: -1050, width: 1867, height: 1050)
+        #expect(VideoGeometry.videoRect(window: windowed, fullScreen: false, lastAspect: 16.0 / 9, titleAspect: 2)
+            == CGRect(x: 132, y: -1050 + 58.25, width: 1867, height: 933.5))
+        #expect(VideoGeometry.videoRect(window: windowed, fullScreen: false, lastAspect: 2, titleAspect: nil) == windowed)
     }
 
     // Breaks if the y axis flip uses the window height instead of the primary screen height.

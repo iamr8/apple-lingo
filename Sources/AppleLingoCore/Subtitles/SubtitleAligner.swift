@@ -1,24 +1,47 @@
 import Foundation
 
-/// Re-times a subtitle track from another release to a reference track (Apple's) by one offset.
-/// Uses timing only, so the two tracks can be in different languages and split dialogue
-/// differently. Every pair of cue starts votes for a shift; the strongest wins and is fine-tuned
-/// by speech overlap. A release that one offset does not fit (another cut or frame rate) gets a
-/// low confidence: the user tries another file.
+/// Re-times a subtitle track from another release to a reference track (Apple's) by one offset,
+/// after a frame-rate change if one fits better. Uses timing only, so the two tracks can be in
+/// different languages and split dialogue differently. Every pair of cue starts votes for a
+/// shift; the strongest wins and is fine-tuned by speech overlap. A release that one offset does
+/// not fit (another cut) gets a low confidence: the user tries another file.
 public enum SubtitleAligner {
     public struct Result: Sendable {
         public var cues: [Cue]
         /// Share of cues that start within `startTolerance` of a reference cue, 0 to 1. Real
         /// files: the right episode 0.96-0.99, other episodes 0.24-0.30.
         public var confidence: Double
+        /// The factor the backing's times were multiplied by before the shift: 1, or a frame-rate change.
+        public var scale = 1.0
     }
 
     static let maxShift = 900.0
     static let bin = 0.1
     static let startTolerance = 0.5
 
+    /// Frame-rate changes between releases: none first, so it wins a tie; 25 fps (PAL speed-up)
+    /// both ways; 24 vs 23.976 fps both ways; 25 vs 24 fps both ways.
+    static let scales = [1, 25 / (24000.0 / 1001), (24000.0 / 1001) / 25, 1000.0 / 1001, 1001.0 / 1000, 25.0 / 24, 24.0 / 25]
+
     public static func align(_ cues: [Cue], to reference: [Cue]) -> Result {
         guard !cues.isEmpty, !reference.isEmpty else { return Result(cues: cues, confidence: 0) }
+        var best = Result(cues: cues, confidence: -1)
+        for scale in scales {
+            let scaled = cues.map { cue in
+                var c = cue
+                c.start *= scale
+                c.end *= scale
+                return c
+            }
+            var result = align(shifting: scaled, to: reference)
+            result.scale = scale
+            if result.confidence > best.confidence { best = result }
+        }
+        return best
+    }
+
+    /// Moves `cues` by the one shift that fits `reference` best.
+    static func align(shifting cues: [Cue], to reference: [Cue]) -> Result {
         let (voted, _) = vote(cues.map(\.start), reference.map(\.start), around: 0, range: maxShift)
         let shift = refine(cues, shift: voted, reference: reference)
         let out = cues.map { cue in

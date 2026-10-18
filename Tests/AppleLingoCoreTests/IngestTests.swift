@@ -138,6 +138,25 @@ struct MoviePackageReaderTests {
         #expect(try MoviePackageReader.manifest(package: pkg).originalLanguage == "fr")
     }
 
+    // Breaks if the picture aspect is not read from the video variants' RESOLUTION (Black Bird
+    // "The Place I Lie" lists only 2:1 sizes), or a package without one gets a guessed aspect.
+    @Test func videoAspectFromVariants() throws {
+        #expect(try MoviePackageReader.manifest(package: Fixture.package).videoAspect == nil)
+        let pkg = try Fixture.copy()
+        let master = pkg.appending(path: "Data/Playlist-AAAA-master.m3u8")
+        let text = try String(contentsOf: master, encoding: .utf8)
+        let variants = """
+        #EXT-X-STREAM-INF:BANDWIDTH=1281000,AVERAGE-BANDWIDTH=1010000,CODECS="avc1.64001f,mp4a.40.2",RESOLUTION=1356x678,FRAME-RATE=23.976,AUDIO="aud"
+        v/1356.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=5130000,AVERAGE-BANDWIDTH=4020000,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1920x960,FRAME-RATE=23.976,AUDIO="aud"
+        v/1920.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=310000,CODECS="avc1.64001e,mp4a.40.2",RESOLUTION=508x254,FRAME-RATE=23.976,AUDIO="aud"
+        v/508.m3u8
+        """
+        try (text + "\n" + variants + "\n").write(to: master, atomically: true, encoding: .utf8)
+        #expect(try MoviePackageReader.manifest(package: pkg).videoAspect == 2)
+    }
+
     // Breaks if the video length is not the video stream's playlist (its intro included), so the
     // stream lead cannot be measured, or another stream's playlist is used.
     @Test func videoDurationFromVideoPlaylist() throws {
@@ -364,6 +383,8 @@ struct SubtitleLibraryTests {
         let lib = library()
         try lib.ingest(title: "T", album: "A", tracks: ["en": [], "fr-FR": []], sourcePackage: "p.tmp", originalLanguage: "fr")
         #expect(lib.entry(album: "A", title: "T")?.meta.originalLanguage == "fr")
+        try lib.ingest(title: "U", album: "A", tracks: ["en": []], sourcePackage: "q.tmp", videoAspect: 2)
+        #expect(lib.entry(album: "A", title: "U")?.meta.videoAspect == 2)
     }
 
     // Breaks if the parts are not kept with the title, so the form cannot show them.

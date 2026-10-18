@@ -8,7 +8,7 @@ enum WindowTracker {
     private static var lastAspect: CGFloat = VideoGeometry.aspect
 
     /// The video rect in Cocoa screen coordinates, or nil when no TV window is on screen.
-    static func videoFrame(pid: Int32) -> CGRect? {
+    static func videoFrame(pid: Int32, titleAspect: Double? = nil) -> CGRect? {
         guard let primary = NSScreen.screens.first,
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
         else { return nil }
@@ -26,7 +26,8 @@ enum WindowTracker {
         }
         guard let picked = VideoGeometry.pickVideoWindow(windows, pid: pid, screens: screens) else { return nil }
         if !picked.fullScreen, picked.bounds.height > 0 { lastAspect = picked.bounds.width / picked.bounds.height }
-        let video = VideoGeometry.videoRect(window: picked.bounds, fullScreen: picked.fullScreen, lastAspect: lastAspect)
+        let video = VideoGeometry.videoRect(window: picked.bounds, fullScreen: picked.fullScreen, lastAspect: lastAspect,
+                                            titleAspect: titleAspect.map { CGFloat($0) })
         return VideoGeometry.cocoaRect(fromCG: video, primaryHeight: height)
     }
 }

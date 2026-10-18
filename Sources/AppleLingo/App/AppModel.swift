@@ -166,6 +166,7 @@ final class AppModel {
         shownLanguage = language
         applyOffset()
         scheduler.nudge = entry?.meta.nudge ?? 0
+        scheduler.videoAspect = entry?.meta.videoAspect
         scheduler.setTimeline(CueTimeline(cues), rightToLeft: Languages.isRightToLeft(language))
     }
 
@@ -222,7 +223,8 @@ final class AppModel {
                 let dialogue = tracks[manifest.originalLanguage ?? ""] ?? tracks.values.max { $0.count < $1.count } ?? []
                 let entry = try library.ingest(title: manifest.title, album: manifest.album, tracks: tracks, sourcePackage: folder,
                                                originalLanguage: manifest.originalLanguage, videoDuration: manifest.videoDuration,
-                                               parts: MoviePackageReader.parts(manifest, package: package, dialogue: dialogue))
+                                               parts: MoviePackageReader.parts(manifest, package: package, dialogue: dialogue),
+                                               videoAspect: manifest.videoAspect)
                 await MainActor.run { self.captured(entry) }
             } catch {
                 Log.ingest.error("ingest failed: \(String(describing: type(of: error)))")
@@ -320,7 +322,8 @@ final class AppModel {
     }
 
     enum BackingImport: Equatable {
-        case saved(lines: Int)
+        /// `scale` is the frame-rate change the file's times needed; 1 for none.
+        case saved(lines: Int, scale: Double = 1)
         /// Few lines land on the title's speech; `percent` of them do. Save only if the user agrees.
         case lowMatch(percent: Int, cues: [Cue])
     }
@@ -336,7 +339,7 @@ final class AppModel {
         guard aligned.confidence >= Self.backingMinMatch else {
             return .lowMatch(percent: Int((aligned.confidence * 100).rounded()), cues: aligned.cues)
         }
-        return .saved(lines: try saveBacking(entry, cues: aligned.cues))
+        return .saved(lines: try saveBacking(entry, cues: aligned.cues), scale: aligned.scale)
     }
 
     /// Saves aligned backing cues, without release ads, as the title's target track and shows

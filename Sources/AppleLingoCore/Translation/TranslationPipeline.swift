@@ -278,8 +278,17 @@ public actor TranslationPipeline {
                 if ids.count > 1, copies.count * 2 > ids.count {
                     throw PipelineError.badReply("\(copies.count) of \(ids.count) cues copy their input")
                 }
+                // One cue given back as its guide, a line in another language: the model had no
+                // source line under it (on-screen text) and copied the guide (The Place I Lie
+                // opened with Arabic «اقتل اقتل» in Persian, 2026-10-17). A one-word guide can be a
+                // name. Asked for again alone, where a stubborn copy still passes.
+                let guideCopy = { (item: Item) -> String? in
+                    guard ids.count > 1, let guide = guides[item.id], guide.split(whereSeparator: \.isWhitespace).count > 1,
+                          Self.letters(guide) == Self.letters(item.text) else { return nil }
+                    return "cue \(item.id) copies its guide"
+                }
                 let problem = { (item: Item) in
-                    Self.textProblem(item) ?? Self.numberProblem(item, source: sources[item.id] ?? "") ?? drifted(item)
+                    Self.textProblem(item) ?? Self.numberProblem(item, source: sources[item.id] ?? "") ?? drifted(item) ?? guideCopy(item)
                 }
                 var seen = Set<Int>()
                 let good = reply.filter { wanted.contains($0.id) && problem($0) == nil && seen.insert($0.id).inserted }
@@ -315,7 +324,8 @@ public actor TranslationPipeline {
         For each pair of characters who talk, give the \(target) form of address (for example informal or formal "you") \
         that fits their relationship; leave the list empty if \(target) has no such forms. \
         Choose one register for dialogue and describe the tone in one sentence. \
-        List recurring terms, and the idioms or slang that need a non-literal \(target) rendering, with that rendering.
+        List recurring terms, and the idioms, proverbs or slang that need a non-literal \(target) rendering, with that \
+        rendering; for a proverb, the \(target) proverb with the same meaning.
         """
         return try await withRetry {
             let data = try await self.provider.complete(system: system, user: user, schema: StyleSheet.generationSchema)
@@ -357,9 +367,12 @@ public actor TranslationPipeline {
         Rules:
         - Return exactly one item for each id in "translate", with that id in "cue". Never merge, split, drop or reorder cues. \
         "context_before" and "context_after" are context only.
-        - In "source_word", copy the first word of the item's \(copied). Never translate it.
+        - In "source_word", copy the first word of the item's \(copied). Never translate it. It is a check only, \
+        not part of the translation: never start "text" with it unless it is also a \(target) word.
         - Keep the full meaning, intent, tone and register of each line. Translate idioms, slang and jokes by meaning, \
         not word for word. Never add explanations, notes or content that is not in the \(base).
+        - Proverbs and sayings: never translate them literally. Use the \(target) proverb or saying with the same meaning. \
+        Only when \(target) has none, say its meaning plainly in natural \(target).
         - Reading speed: each cue has "max_chars", the most characters a viewer can read in its time. Stay within it. \
         If the meaning does not fit, condense: drop fillers and repetition, use shorter words, keep what matters.
         - At most 2 lines of at most 42 characters. Use one line when it fits. Break lines at natural phrase boundaries; \

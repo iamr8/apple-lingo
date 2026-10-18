@@ -20,6 +20,8 @@ public struct TitleMeta: Codable, Sendable, Equatable {
     public var videoDuration: Double?
     /// Intro, recap, content and what follows, in download time.
     public var parts: [TitlePart]?
+    /// Width over height of the picture, from the package's video variants.
+    public var videoAspect: Double?
     public var sourcePackage: String
     public var created = Date()
     /// Seconds added to the playback position.
@@ -112,7 +114,7 @@ public struct SubtitleLibrary: Sendable {
     @discardableResult
     public func ingest(title: String, album: String, tracks: [String: [Cue]], sourcePackage: String,
                        originalLanguage: String? = nil, videoDuration: Double? = nil,
-                       parts: [TitlePart]? = nil) throws -> Entry {
+                       parts: [TitlePart]? = nil, videoAspect: Double? = nil) throws -> Entry {
         let dir = directory(album: album, title: title)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var entry = Entry(directory: dir, meta: (try? readMeta(dir)) ?? TitleMeta(
@@ -123,6 +125,7 @@ public struct SubtitleLibrary: Sendable {
         entry.meta.originalLanguage = originalLanguage
         entry.meta.videoDuration = videoDuration
         entry.meta.parts = parts
+        entry.meta.videoAspect = videoAspect
         try entry.saveMeta()
         return entry
     }
