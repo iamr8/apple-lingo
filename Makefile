@@ -59,6 +59,7 @@ app: deps build
 	cp -R $(FRAMEWORK) $(APP)/Contents/Frameworks/
 	cp $(TEST_CLIENT) $(APP)/Contents/Helpers/
 	cp $(ADAPTER_SRC)/bin/mediaremote-adapter.pl $(APP)/Contents/Resources/
+	cp LICENSE.md THIRD_PARTY_NOTICES.md $(APP)/Contents/Resources/
 	$(MAKE) sign
 
 sign:
