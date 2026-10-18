@@ -505,6 +505,29 @@ struct TranslationPipelineTests {
         #expect(asked(provider) == [[1, 2, 3, 4], [2]])
     }
 
+    // Breaks if a cue given back as its guide passes as one harmless copy: The Place I Lie opens
+    // with on-screen text no English line covers, and Gemini returned its Arabic guide as the
+    // Persian cue («اقتل اقتل», 2026-10-17). It is asked for again alone, as a missing cue is.
+    @Test func guideCopyIsAskedAgainAlone() async throws {
+        let arabic = [Cue(id: 1, start: 10.253, end: 11.504, text: "\"اقتل اقتل\""),
+                      Cue(id: 2, start: 11.588, end: 13.506, text: "هل رأيت أحداً بالداخل هنا؟")]
+        let english = [Cue(id: 1, start: 11.588, end: 13.506, text: "Did you see anyone in here?")]
+        let provider = EchoProvider()
+        let copying = EditingProvider { items in
+            guard items.count > 1, case .object(var c) = items[0] else {
+                guard case .object(var c) = items[0] else { return items }
+                c["text"] = .string("«بکش بکش»")
+                return [.object(c)]
+            }
+            c["text"] = .string("«اقتل اقتل»")
+            return [.object(c)] + items.dropFirst()
+        }
+        let out = try await TranslationPipeline(provider: Both(record: provider, inner: copying), retryDelay: .zero)
+            .translate(job(english, timing: arabic)) { _ in }
+        #expect(out.map(\.text) == ["«بکش بکش»", "T"])
+        #expect(asked(provider) == [[1, 2], [1]])
+    }
+
     // Breaks if "invalid translation" does not say what was wrong.
     @Test func invalidReplySaysWhy() async {
         let provider = EditingProvider { Array($0.dropLast()) }
