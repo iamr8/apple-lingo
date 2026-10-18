@@ -112,7 +112,7 @@ struct ImportSubtitleView: View {
     private func importData(_ entry: SubtitleLibrary.Entry, data: Result<Data, Error>) {
         do {
             switch try model.importBacking(entry, data: data.get()) {
-            case .saved(let lines): message = saved(lines)
+            case .saved(let lines, let scale): message = saved(lines, scale: scale)
             case .lowMatch(let percent, let cues): message = nil; lowMatch = (percent, cues)
             }
         } catch {
@@ -130,7 +130,10 @@ struct ImportSubtitleView: View {
         }
     }
 
-    private func saved(_ lines: Int) -> String {
-        "Saved \(lines) lines as the \(Languages.name(Preferences.languages.target)) track."
+    private func saved(_ lines: Int, scale: Double = 1) -> String {
+        let text = "Saved \(lines) lines as the \(Languages.name(Preferences.languages.target)) track."
+        guard scale != 1 else { return text }
+        let percent = abs(scale - 1) * 100
+        return text + " The file was made for another frame rate, so its timing was \(scale > 1 ? "stretched" : "shrunk") by \(percent.formatted(.number.precision(.fractionLength(1))))%."
     }
 }

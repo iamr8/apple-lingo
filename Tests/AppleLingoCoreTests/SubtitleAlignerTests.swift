@@ -34,6 +34,23 @@ struct SubtitleAlignerTests {
         let result = SubtitleAligner.align(Self.backing { $0 + 12.4 }, to: Self.reference)
         #expect(Self.maxError(result) < 0.05)
         #expect(result.confidence > 0.9)
+        #expect(result.scale == 1)
+    }
+
+    // Breaks if a 25 fps release (PAL speed-up: every time × 23.976/25, here also 3 s late) is
+    // moved by one offset only: its lines drift up to 2 minutes apart over 50 minutes.
+    @Test func fitsPALFrameRate() {
+        let result = SubtitleAligner.align(Self.backing { $0 * (24000.0 / 1001) / 25 + 3 }, to: Self.reference)
+        #expect(Self.maxError(result) < 0.05, "\(Self.maxError(result))")
+        #expect(result.confidence > 0.96)
+        #expect(abs(result.scale - 1.0427) < 0.0001, "\(result.scale)")
+    }
+
+    // Breaks if a 24 fps release played at 23.976 (every time × 1.001, 8 s early) is not fit.
+    @Test func fitsNTSCSlowDown() {
+        let result = SubtitleAligner.align(Self.backing { $0 * 1.001 - 8 }, to: Self.reference)
+        #expect(Self.maxError(result) < 0.05, "\(Self.maxError(result))")
+        #expect(abs(result.scale - 0.999) < 0.0001, "\(result.scale)")
     }
 
     // Breaks if a backing from another cut (a 45 s scene added halfway) is bent to fit in parts

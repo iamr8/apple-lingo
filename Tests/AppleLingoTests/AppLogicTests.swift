@@ -346,6 +346,30 @@ struct AppModelTests {
         #expect(model.shownLanguage == "fa")
     }
 
+    // Breaks if a 25 fps backing (every time × 23.976/25) is not converted onto Apple's timing,
+    // the conversion is not reported, or the import resets the user's offset.
+    @Test func importBackingFitsFrameRate() throws {
+        let entry = try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["ar": Self.appleTrack, "en": Self.appleTrack], sourcePackage: "p")
+        let model = model()
+        model.update(playing("Pilot", album: "Black Bird"))
+        model.cancelTranslation(key: AppModel.key(entry, "fa"))
+        model.adjust(offset: 0.5)
+        let pal = Self.appleTrack.map { cue in
+            var c = cue
+            c.start *= 24000.0 / 1001 / 25
+            c.end *= 24000.0 / 1001 / 25
+            return c
+        }
+        guard case .saved(let lines, let scale) = try model.importBacking(entry, data: Self.srt(pal, shift: 3)) else {
+            Issue.record("asked instead of saving"); return
+        }
+        #expect(lines == 60)
+        #expect(abs(scale - 1.0427) < 0.0001, "\(scale)")
+        let saved = try #require(library.entry(album: "Black Bird", title: "Pilot"))
+        #expect(zip(try saved.cues(language: "fa").map(\.start), Self.appleTrack.map(\.start)).allSatisfy { abs($0 - $1) < 0.02 })
+        #expect(saved.meta.offset == 0.5)
+    }
+
     // Breaks if an import runs for a title the planner stops.
     @Test func importNeedsAPlan() throws {
         let entry = try library.ingest(title: "Pilot", album: "Black Bird", tracks: ["en": [], "fa": []], sourcePackage: "p")
