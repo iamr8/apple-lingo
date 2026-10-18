@@ -315,7 +315,8 @@ public actor TranslationPipeline {
         For each pair of characters who talk, give the \(target) form of address (for example informal or formal "you") \
         that fits their relationship; leave the list empty if \(target) has no such forms. \
         Choose one register for dialogue and describe the tone in one sentence. \
-        List recurring terms, and the idioms or slang that need a non-literal \(target) rendering, with that rendering.
+        List recurring terms, and the idioms, proverbs or slang that need a non-literal \(target) rendering, with that \
+        rendering; for a proverb, the \(target) proverb with the same meaning.
         """
         return try await withRetry {
             let data = try await self.provider.complete(system: system, user: user, schema: StyleSheet.generationSchema)
@@ -360,6 +361,8 @@ public actor TranslationPipeline {
         - In "source_word", copy the first word of the item's \(copied). Never translate it.
         - Keep the full meaning, intent, tone and register of each line. Translate idioms, slang and jokes by meaning, \
         not word for word. Never add explanations, notes or content that is not in the \(base).
+        - Proverbs and sayings: never translate them literally. Use the \(target) proverb or saying with the same meaning. \
+        Only when \(target) has none, say its meaning plainly in natural \(target).
         - Reading speed: each cue has "max_chars", the most characters a viewer can read in its time. Stay within it. \
         If the meaning does not fit, condense: drop fillers and repetition, use shorter words, keep what matters.
         - At most 2 lines of at most 42 characters. Use one line when it fits. Break lines at natural phrase boundaries; \
