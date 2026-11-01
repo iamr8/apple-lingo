@@ -1,13 +1,13 @@
 {
-  "originHash" : "4bef46111ede7f3ba03ded0558eecadf55fb980cbd6234a0250243caab9595a7",
+  "originHash" : "63fd9b7d140620d7a5958e634cb0aba4a13c1ef8077765275f7790d5694469cd",
   "pins" : [
     {
       "identity" : "anylanguagemodel",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/huggingface/AnyLanguageModel",
       "state" : {
-        "revision" : "80d50b0b22291d956d43f2c67ad1339c188084a3",
-        "version" : "1.0.0"
+        "revision" : "dcd18b30566de97da9c7fb0197415547c64a2bae",
+        "version" : "1.1.1"
       }
     },
     {
@@ -56,12 +56,12 @@
       }
     },
     {
-      "identity" : "swift-issue-reporting",
+      "identity" : "swift-http-types",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/pointfreeco/swift-issue-reporting",
+      "location" : "https://github.com/apple/swift-http-types",
       "state" : {
-        "revision" : "b23bb4493c439d3e05152bc167014235ba3d47fc",
-        "version" : "2.1.2"
+        "revision" : "bff4b6903cdc99dda49649dd52f46c11cfd3ed50",
+        "version" : "1.8.0"
       }
     },
     {
@@ -80,6 +80,15 @@
       "state" : {
         "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
         "version" : "602.0.0"
+      }
+    },
+    {
+      "identity" : "xctest-dynamic-overlay",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pointfreeco/xctest-dynamic-overlay",
+      "state" : {
+        "revision" : "d9308ad679143c26a30dec52daefe82f54af2b82",
+        "version" : "1.13.1"
       }
     }
   ],
