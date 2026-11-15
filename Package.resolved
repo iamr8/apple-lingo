@@ -1,13 +1,13 @@
 {
-  "originHash" : "4bef46111ede7f3ba03ded0558eecadf55fb980cbd6234a0250243caab9595a7",
+  "originHash" : "7de9581bd7dfe984ef7cc894526ce3c1e3f922722f568238dcaa3e580e4cc0b7",
   "pins" : [
     {
       "identity" : "anylanguagemodel",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/huggingface/AnyLanguageModel",
       "state" : {
-        "revision" : "80d50b0b22291d956d43f2c67ad1339c188084a3",
-        "version" : "1.0.0"
+        "revision" : "194d948d2dac46d19db69795b64ba46c8e33061a",
+        "version" : "1.3.0"
       }
     },
     {
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/EventSource",
       "state" : {
-        "revision" : "86b5096ac59ab46e66bd1f6377c604bc1dab0bc2",
-        "version" : "1.5.1"
+        "revision" : "bb4b61273b5a976bb571859c17f903ebc3439df1",
+        "version" : "1.6.0"
       }
     },
     {
@@ -53,6 +53,15 @@
       "state" : {
         "revision" : "4fb9e7cbb4b8f5a7354005db39447f570d6b3e19",
         "version" : "1.7.3"
+      }
+    },
+    {
+      "identity" : "swift-http-types",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-http-types",
+      "state" : {
+        "revision" : "bff4b6903cdc99dda49649dd52f46c11cfd3ed50",
+        "version" : "1.8.0"
       }
     },
     {
